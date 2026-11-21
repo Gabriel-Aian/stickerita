@@ -9,6 +9,21 @@ const val TRAY_FILE_NAME = "tray.png"
 const val DEFAULT_EMOJI = "😀"
 const val PROVIDER_SUFFIX = ".stickercontentprovider"
 
+/** Como a lista de pacotes é mostrada. */
+enum class PackView(val label: String) { LIST("Lista"), GRID("Grade") }
+
+enum class PackFilter(val label: String) {
+    ALL("Todos"),
+    STATIC("Estáticos"),
+    ANIMATED("Animados"),
+}
+
+enum class PackSort(val label: String, val short: String) {
+    RECENT("Mais recentes primeiro", "Recentes"),
+    NAME_ASC("Nome (A–Z)", "A–Z"),
+    NAME_DESC("Nome (Z–A)", "Z–A"),
+}
+
 data class Sticker(
     val fileName: String,
     /** Até 3 emojis colados, sem separador (ex.: "😀🎉"). */

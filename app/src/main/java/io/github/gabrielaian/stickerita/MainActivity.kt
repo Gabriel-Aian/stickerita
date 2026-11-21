@@ -28,7 +28,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -40,6 +42,13 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -69,7 +78,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.graphics.Bitmap
@@ -207,15 +216,48 @@ private fun PackListScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                     )
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(vm.packs, key = { it.id }) { pack ->
-                        PackRow(vm, pack)
+                PackControls(vm)
+
+                val visible = vm.visiblePacks
+                if (visible.isEmpty()) {
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "Nenhum pacote ${if (vm.packFilter == PackFilter.ANIMATED) "animado" else "estático"} ainda.",
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                } else if (vm.packView == PackView.GRID) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(150.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 96.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(visible, key = { it.id }) { pack ->
+                            PackCard(vm, pack)
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 96.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(visible, key = { it.id }) { pack ->
+                            PackRow(vm, pack)
+                        }
                     }
                 }
             }
@@ -308,7 +350,7 @@ private fun PackRow(vm: MainViewModel, pack: StickerPack) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val first = pack.stickers.firstOrNull()
-            Thumb(file = first?.let { vm.stickerFile(pack, it) }, size = 56.dp)
+            Thumb(file = first?.let { vm.stickerFile(pack, it) }, modifier = Modifier.size(56.dp))
             Column(Modifier.padding(start = 12.dp)) {
                 Text(pack.name, style = MaterialTheme.typography.titleMedium)
                 Text(
@@ -321,11 +363,114 @@ private fun PackRow(vm: MainViewModel, pack: StickerPack) {
     }
 }
 
+/** Filtro por tipo, ordem alfabética ou por data, e lista ou grade. */
 @Composable
-private fun Thumb(file: File?, size: Dp) {
-    Box(
+private fun PackControls(vm: MainViewModel) {
+    var sortMenu by remember { mutableStateOf(false) }
+
+    Column(
         Modifier
-            .size(size)
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            PackFilter.entries.forEach { filter ->
+                val count = when (filter) {
+                    PackFilter.ALL -> vm.packs.size
+                    PackFilter.STATIC -> vm.packs.count { !it.animated }
+                    PackFilter.ANIMATED -> vm.packs.count { it.animated }
+                }
+                FilterChip(
+                    selected = vm.packFilter == filter,
+                    onClick = { vm.updateFilter(filter) },
+                    label = { Text("${filter.label} ($count)") },
+                )
+            }
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Box {
+                AssistChip(
+                    onClick = { sortMenu = true },
+                    label = { Text("Ordenar: ${vm.packSort.short}") },
+                )
+                DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                    PackSort.entries.forEach { sort ->
+                        DropdownMenuItem(
+                            text = { Text(if (sort == vm.packSort) "✓ ${sort.label}" else sort.label) },
+                            onClick = {
+                                vm.updateSort(sort)
+                                sortMenu = false
+                            },
+                        )
+                    }
+                }
+            }
+
+            SingleChoiceSegmentedButtonRow {
+                PackView.entries.forEachIndexed { index, mode ->
+                    SegmentedButton(
+                        selected = vm.packView == mode,
+                        onClick = { vm.updateView(mode) },
+                        shape = SegmentedButtonDefaults.itemShape(index, PackView.entries.size),
+                        label = { Text(mode.label) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Pacote na visualização em grade: figurinha grande em cima, dados embaixo. */
+@Composable
+private fun PackCard(vm: MainViewModel, pack: StickerPack) {
+    Card(
+        onClick = { vm.selectedId = pack.id },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            val first = pack.stickers.firstOrNull()
+            Thumb(
+                file = first?.let { vm.stickerFile(pack, it) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f),
+            )
+            Text(
+                pack.name,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Text(
+                "${pack.stickers.size}/$MAX_STICKERS${if (pack.animated) " · animado" else ""}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                pack.publisher,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun Thumb(file: File?, modifier: Modifier) {
+    Box(
+        modifier
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,

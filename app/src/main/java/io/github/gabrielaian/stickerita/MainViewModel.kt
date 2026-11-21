@@ -12,6 +12,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.Collator
+import java.util.Locale
 
 /** Arquivo animado esperando o recorte (position/total contam os arquivos da importação). */
 class TrimRequest(val uri: Uri, val durationMs: Int, val position: Int, val total: Int)
@@ -28,6 +30,40 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repository = PackRepository(app)
     private val prefs = app.getSharedPreferences("stickerita", Context.MODE_PRIVATE)
+
+    private inline fun <reified T : Enum<T>> readEnum(key: String, default: T): T =
+        try {
+            enumValueOf<T>(prefs.getString(key, null) ?: default.name)
+        } catch (e: IllegalArgumentException) {
+            default
+        }
+
+    /** Preferências da lista de pacotes; ficam salvas entre as aberturas do app. */
+    var packView by mutableStateOf(readEnum("pack_view", PackView.LIST))
+        private set
+    var packFilter by mutableStateOf(readEnum("pack_filter", PackFilter.ALL))
+        private set
+    var packSort by mutableStateOf(readEnum("pack_sort", PackSort.RECENT))
+        private set
+
+    fun updateView(value: PackView) {
+        packView = value
+        prefs.edit().putString("pack_view", value.name).apply()
+    }
+
+    fun updateFilter(value: PackFilter) {
+        packFilter = value
+        prefs.edit().putString("pack_filter", value.name).apply()
+    }
+
+    fun updateSort(value: PackSort) {
+        packSort = value
+        prefs.edit().putString("pack_sort", value.name).apply()
+    }
+
+    private val collator: Collator = Collator.getInstance(Locale.forLanguageTag("pt-BR")).apply {
+        strength = Collator.PRIMARY // ignora maiúsculas e acentos na ordem alfabética
+    }
 
     var packs by mutableStateOf<List<StickerPack>>(emptyList())
         private set
@@ -52,6 +88,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Último autor usado, para já vir preenchido ao criar outro pacote. */
     var publisher by mutableStateOf(prefs.getString("publisher", "") ?: "")
         private set
+
+    /** Os pacotes já filtrados por tipo e ordenados, como a lista os mostra. */
+    val visiblePacks: List<StickerPack>
+        get() {
+            val filtered = packs.filter {
+                when (packFilter) {
+                    PackFilter.ALL -> true
+                    PackFilter.STATIC -> !it.animated
+                    PackFilter.ANIMATED -> it.animated
+                }
+            }
+            val byName = compareBy<StickerPack, String>(collator) { it.name }.thenByDescending { it.createdAt }
+            return when (packSort) {
+                PackSort.RECENT -> filtered.sortedByDescending { it.createdAt }
+                PackSort.NAME_ASC -> filtered.sortedWith(byName)
+                PackSort.NAME_DESC -> filtered.sortedWith(byName).reversed()
+            }
+        }
 
     val selected: StickerPack?
         get() = packs.firstOrNull { it.id == selectedId }

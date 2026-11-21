@@ -15,8 +15,8 @@ android {
         applicationId = "io.github.gabrielaian.stickerita"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.2.2"
+        versionCode = 10
+        versionName = "0.2.3"
     }
 
     signingConfigs {

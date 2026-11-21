@@ -16,6 +16,7 @@ O Stickerita faz o mesmo caminho dos apps de figurinha conhecidos: converte cada
 - Depois de adicionar pelo Compartilhar, o app já pede ao WhatsApp para atualizar o pacote (quando ele tem 3 figurinhas ou mais). O WhatsApp sempre pede a sua confirmação.
 - Botão **Adicionar ao WhatsApp** (ou WhatsApp Business) usando o contrato oficial.
 - Suas imagens e pacotes ficam só no aparelho e nunca são enviados a lugar nenhum.
+- **Lista de pacotes personalizável**: visualização em lista ou em grade, filtro por tipo (todos, estáticos, animados) e ordem por mais recentes ou alfabética (A–Z e Z–A). As escolhas ficam salvas.
 - **Atualiza sozinho pelo GitHub**: ao abrir, o app confere a última release e, havendo versão nova, mostra um aviso com o botão *Atualizar agora*. O botão de atualizar na barra superior força a verificação.
 
 ## Instalar
