@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ícone original: um adesivo com a ponta dobrada e uma folha. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- corpo do adesivo -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,28 H70 A8,8 0 0 1 78,36 V62 L60,80 H38 A8,8 0 0 1 30,72 V36 A8,8 0 0 1 38,28 Z" />
+
+    <!-- ponta dobrada -->
+    <path
+        android:fillColor="#C5E1A5"
+        android:pathData="M60,80 L78,62 L60,62 Z" />
+
+    <!-- folha -->
+    <path
+        android:fillColor="#2E7D32"
+        android:pathData="M40,66 C40,50 50,40 68,40 C68,57 57,66 40,66 Z" />
+
+    <!-- nervura da folha -->
+    <path
+        android:pathData="M43,63 L60,47"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+</vector>
