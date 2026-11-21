@@ -1,30 +1,61 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ícone original: um adesivo com a ponta dobrada e uma folha. -->
+<!-- Ícone original: o "brotinho", mascote do Stickerita. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- corpo do adesivo -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M38,28 H70 A8,8 0 0 1 78,36 V62 L60,80 H38 A8,8 0 0 1 30,72 V36 A8,8 0 0 1 38,28 Z" />
+    <group
+        android:pivotX="75"
+        android:pivotY="80"
+        android:scaleX="0.57"
+        android:scaleY="0.57"
+        android:translateX="-21"
+        android:translateY="-26">
 
-    <!-- ponta dobrada -->
-    <path
-        android:fillColor="#C5E1A5"
-        android:pathData="M60,80 L78,62 L60,62 Z" />
+        <!-- corpo -->
+        <path
+            android:fillColor="#A5D6A7"
+            android:strokeColor="#2E7D32"
+            android:strokeWidth="4"
+            android:pathData="M33,88 a42,46 0 1,0 84,0 a42,46 0 1,0 -84,0 Z" />
 
-    <!-- folha -->
-    <path
-        android:fillColor="#2E7D32"
-        android:pathData="M40,66 C40,50 50,40 68,40 C68,57 57,66 40,66 Z" />
+        <!-- haste e folhas -->
+        <path
+            android:pathData="M75,44 V30"
+            android:strokeColor="#2E7D32"
+            android:strokeWidth="4"
+            android:strokeLineCap="round" />
+        <path
+            android:fillColor="#2E7D32"
+            android:pathData="M75,32 Q56,16 48,34 Q65,42 75,32 Z" />
+        <path
+            android:fillColor="#43A047"
+            android:pathData="M75,32 Q94,14 103,32 Q86,42 75,32 Z" />
 
-    <!-- nervura da folha -->
-    <path
-        android:pathData="M43,63 L60,47"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="2"
-        android:strokeLineCap="round" />
+        <!-- olhos -->
+        <path
+            android:fillColor="#1B5E20"
+            android:pathData="M55,80 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 Z" />
+        <path
+            android:fillColor="#1B5E20"
+            android:pathData="M85,80 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 Z" />
+
+        <!-- boca e língua -->
+        <path
+            android:fillColor="#1B5E20"
+            android:pathData="M60,94 Q75,116 90,94 Z" />
+        <path
+            android:fillColor="#EF9A9A"
+            android:pathData="M68,105 Q75,99 82,105 Q75,110 68,105 Z" />
+
+        <!-- bochechas -->
+        <path
+            android:fillColor="#B3F48FB1"
+            android:pathData="M44,96 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 Z" />
+        <path
+            android:fillColor="#B3F48FB1"
+            android:pathData="M94,96 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 Z" />
+    </group>
 </vector>
