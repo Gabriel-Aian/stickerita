@@ -16,7 +16,13 @@ import java.io.File
 /** Arquivo animado esperando o recorte (position/total contam os arquivos da importação). */
 class TrimRequest(val uri: Uri, val durationMs: Int, val position: Int, val total: Int)
 
-private data class Import(val added: Int, val failed: Int, val overflow: Int, val reason: String?)
+private data class Import(
+    val added: Int,
+    val failed: Int,
+    val overflow: Int,
+    val reason: String?,
+    val note: String? = null,
+)
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -202,6 +208,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         var added = 0
         var failed = 0
         var reason: String? = null
+        val notes = mutableListOf<String>()
     }
 
     /** Arquivo à espera do recorte; a interface mostra a tela de recorte enquanto não for nulo. */
@@ -258,6 +265,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val converted = AnimatedConverter.convert(app, uri, startMs, endMs) { busyText = prefix + it }
                 if (repository.addSticker(current.packId, converted.webp, converted.preview) != null) {
                     current.added++
+                    converted.note?.let { current.notes += it }
                 } else {
                     current.failed++
                     current.reason = "não consegui salvar no pacote"
@@ -302,13 +310,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         reloadNow()
         busy = false
         busyText = ""
-        report(Import(current.added, current.failed, current.overflow, current.reason))
+        val note = when (current.notes.size) {
+            0 -> null
+            1 -> current.notes.first()
+            else -> "${current.notes.size} reduzidas para caber nos 500 KB"
+        }
+        report(Import(current.added, current.failed, current.overflow, current.reason, note))
     }
 
     private fun report(result: Import) {
-        val (added, failed, overflow, reason) = result
+        val (added, failed, overflow, reason, note) = result
         val parts = mutableListOf<String>()
         if (added > 0) parts += if (added == 1) "1 figurinha adicionada" else "$added figurinhas adicionadas"
+        if (note != null) parts += note
         if (failed > 0) {
             val label = if (failed == 1) "1 arquivo falhou" else "$failed arquivos falharam"
             parts += if (reason != null) "$label ($reason)" else label

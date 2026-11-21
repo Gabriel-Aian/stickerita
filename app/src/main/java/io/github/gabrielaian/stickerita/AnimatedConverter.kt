@@ -31,13 +31,28 @@ object AnimatedConverter {
     /** O limite do WhatsApp é 500 KB; deixamos uma folga. */
     private const val MAX_BYTES = 495_000
 
-    /** Pares (usar 1 a cada N quadros, qualidade), do mais fiel ao mais leve. */
-    private val ATTEMPTS = listOf(1 to 75, 1 to 55, 1 to 40, 2 to 55, 2 to 40, 2 to 30, 3 to 40, 3 to 30)
+    /**
+     * @param step usa 1 a cada [step] quadros (15, 7,5, 5 ou 3,75 quadros por segundo)
+     * @param scale resolução de trabalho: o quadro é reduzido e volta para 512x512, o que o deixa
+     *   mais suave e muito mais leve de comprimir (o arquivo final continua 512x512)
+     */
+    private class Attempt(val step: Int, val scale: Float, val quality: Int)
+
+    /** Do mais fiel ao mais leve; a primeira que couber nos 500 KB vence. */
+    private val ATTEMPTS = listOf(
+        Attempt(1, 1.00f, 75), Attempt(1, 1.00f, 55), Attempt(1, 0.75f, 55), Attempt(2, 1.00f, 55),
+        Attempt(1, 0.75f, 40), Attempt(2, 0.75f, 50), Attempt(2, 0.50f, 55), Attempt(1, 0.50f, 45),
+        Attempt(2, 0.50f, 40), Attempt(3, 0.50f, 45), Attempt(3, 0.50f, 30), Attempt(2, 0.375f, 40),
+        Attempt(3, 0.375f, 35), Attempt(3, 0.375f, 25), Attempt(4, 0.375f, 30), Attempt(4, 0.30f, 25),
+        Attempt(4, 0.30f, 15),
+    )
 
     class Result(
         val webp: ByteArray,
         /** Primeiro quadro, como WebP estático (para o ícone do pacote e miniaturas). */
         val preview: ByteArray,
+        /** O que foi reduzido para caber nos 500 KB (null = nada além da qualidade). */
+        val note: String?,
     )
 
     private enum class Kind { GIF, VIDEO }
@@ -119,7 +134,7 @@ object AnimatedConverter {
                 Kind.VIDEO -> readVideo(context, uri, startMs, endMs, store, onProgress)
             }
             if (store.count < 2) throw IOException("A animação precisa de pelo menos 2 quadros")
-            return compress(store, onProgress)
+            return compress(store, opaque = kind == Kind.VIDEO, onProgress)
         } finally {
             store.close()
             dir.deleteRecursively()
@@ -200,38 +215,75 @@ object AnimatedConverter {
 
     // ---- compressão ----
 
-    private fun compress(store: FrameStore, onProgress: (String) -> Unit): Result {
+    /** Codifica o quadro [index] segundo a tentativa: reduz, volta para 512x512 e comprime. */
+    private fun encodeFrame(store: FrameStore, index: Int, attempt: Attempt, bitmap: Bitmap, opaque: Boolean): ByteArray {
+        store.read(index, bitmap)
+        // Vídeo não tem transparência: sem canal alfa o quadro fica menor.
+        if (opaque) bitmap.setHasAlpha(false)
+
+        var source = bitmap
+        if (attempt.scale < 1f) {
+            val reduced = ((SIZE * attempt.scale).toInt() / 2 * 2).coerceAtLeast(16)
+            val small = Bitmap.createScaledBitmap(bitmap, reduced, reduced, true)
+            source = Bitmap.createScaledBitmap(small, SIZE, SIZE, true)
+            if (opaque) source.setHasAlpha(false)
+        }
+        val out = ByteArrayOutputStream()
+        source.compress(StickerConverter.webpFormat(), attempt.quality, out)
+        return out.toByteArray()
+    }
+
+    private fun compress(store: FrameStore, opaque: Boolean, onProgress: (String) -> Unit): Result {
         val bitmap = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
 
         for ((attemptIndex, attempt) in ATTEMPTS.withIndex()) {
-            val (step, quality) = attempt
             onProgress("compactando (${attemptIndex + 1}/${ATTEMPTS.size})")
+
+            val indices = (0 until store.count step attempt.step).toList()
+            if (indices.size < 2) continue
+
+            // Estima o tamanho por amostra: pula as tentativas que claramente não cabem.
+            val stride = maxOf(1, indices.size / 6)
+            val sample = indices.filterIndexed { position, _ -> position % stride == 0 }.take(8)
+            val average = sample.map { encodeFrame(store, it, attempt, bitmap, opaque).size + 32 }.average()
+            if (average * indices.size > MAX_BYTES * 1.3) continue
 
             val stills = ArrayList<ByteArray>()
             val durations = ArrayList<Int>()
             var total = 0
-            var index = 0
-            while (index < store.count) {
-                store.read(index, bitmap)
-                val out = ByteArrayOutputStream()
-                bitmap.compress(StickerConverter.webpFormat(), quality, out)
-                val still = out.toByteArray()
-
+            var fits = true
+            for ((position, index) in indices.withIndex()) {
+                val still = encodeFrame(store, index, attempt, bitmap, opaque)
                 total += still.size + 32 // 32 = cabeçalhos do pedaço de quadro
-                if (total > MAX_BYTES) break // já passou do limite, tenta algo mais leve
-
+                if (total > MAX_BYTES) {
+                    fits = false
+                    break
+                }
                 // A duração sai da diferença entre instantes, para somar exatamente o tempo real.
-                val next = minOf(index + step, store.count)
+                val next = if (position + 1 < indices.size) indices[position + 1] else store.count
                 stills += still
                 durations += (frameTimeMs(next) - frameTimeMs(index)).toInt()
-                index += step
             }
-            if (index < store.count || stills.size < 2) continue
+            if (!fits) continue
 
             val webp = WebPAnimMuxer.mux(stills, durations, SIZE, SIZE)
-            if (webp.size <= MAX_BYTES) return Result(webp, stills[0])
+            if (webp.size <= MAX_BYTES) return Result(webp, stills[0], describe(attempt))
         }
-        throw IOException("ficou pesada demais para o WhatsApp (limite de 500 KB): use um trecho mais curto ou com menos movimento")
+        throw IOException(
+            "ficou pesada demais para o WhatsApp (limite de 500 KB) mesmo reduzida: use um trecho mais curto",
+        )
+    }
+
+    /** Texto curto do que foi reduzido, ou null se só a qualidade mudou. */
+    private fun describe(attempt: Attempt): String? {
+        if (attempt.step == 1 && attempt.scale >= 1f) return null
+        val fps = BASE_FPS.toFloat() / attempt.step
+        val fpsText = if (fps % 1f == 0f) fps.toInt().toString() else String.format("%.1f", fps)
+        val pixels = (SIZE * attempt.scale).toInt() / 2 * 2
+        val parts = mutableListOf<String>()
+        if (attempt.step > 1) parts += "$fpsText quadros/s"
+        if (attempt.scale < 1f) parts += "resolução ${pixels}px"
+        return "reduzida para caber nos 500 KB (${parts.joinToString(", ")})"
     }
 
     /** Arquivo temporário com os quadros 512x512 sem compressão, lidos por posição. */

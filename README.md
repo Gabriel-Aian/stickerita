@@ -10,7 +10,7 @@ O Stickerita faz o mesmo caminho dos apps de figurinha conhecidos: converte cada
 - Converte cada uma para **WebP 512×512 com transparência e menos de 100 KB**, corrigindo a rotação das fotos.
 - Todas as imagens são redimensionadas para exatamente 512×512, sem manter a proporção (esticadas ou comprimidas, mesmo as menores que 512).
 - Monta o pacote (de 3 a 30 figurinhas), gera o ícone de 96×96 e permite escolher até 3 emojis por figurinha.
-- **Figurinhas animadas**: crie um pacote animado e use GIFs ou vídeos. Você escolhe o trecho de até 10 s (início e fim, com prévia dos quadros). Cada um vira um WebP animado 512×512 de até 500 KB; se for pesado, o app reduz a qualidade e a taxa de quadros até caber.
+- **Figurinhas animadas**: crie um pacote animado e use GIFs ou vídeos. Você escolhe o trecho de até 10 s (início e fim, com prévia dos quadros). Cada um vira um WebP animado 512×512 de até 500 KB; se for pesado, o app reduz sozinho a qualidade, a resolução de trabalho e a taxa de quadros, nessa ordem de preferência, até caber, e avisa o que reduziu. O arquivo final continua 512×512.
 - **Compartilhar direto para o Stickerita**: em qualquer app (WhatsApp, galeria, navegador), compartilhe uma imagem, GIF ou vídeo, escolha o Stickerita e uma janela rápida deixa você escolher ou criar o pacote, sem abrir o app.
 - **Posts do X**: no X, use *Compartilhar → Stickerita* no post. O app lista as fotos, GIFs e vídeos dele, você escolhe quais viram figurinha e o resto segue o fluxo normal.
 - Depois de adicionar pelo Compartilhar, o app já pede ao WhatsApp para atualizar o pacote (quando ele tem 3 figurinhas ou mais). O WhatsApp sempre pede a sua confirmação.
