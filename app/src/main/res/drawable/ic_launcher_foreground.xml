@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ícone original: o "brotinho", mascote do Stickerita. -->
+<!-- Ícone original: uma pilha de figurinhas com uma folha na da frente. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -8,54 +8,50 @@
 
     <group
         android:pivotX="75"
-        android:pivotY="80"
-        android:scaleX="0.57"
-        android:scaleY="0.57"
+        android:pivotY="75"
+        android:scaleX="0.7"
+        android:scaleY="0.7"
         android:translateX="-21"
-        android:translateY="-26">
+        android:translateY="-21">
 
-        <!-- corpo -->
-        <path
-            android:fillColor="#A5D6A7"
-            android:strokeColor="#2E7D32"
-            android:strokeWidth="4"
-            android:pathData="M33,88 a42,46 0 1,0 84,0 a42,46 0 1,0 -84,0 Z" />
+        <!-- figurinha de trás -->
+        <group
+            android:pivotX="75"
+            android:pivotY="75"
+            android:rotation="-14">
+            <path
+                android:fillColor="#FFF59D"
+                android:pathData="M50,32 H102 A10,10 0 0 1 112,42 V94 A10,10 0 0 1 102,104 H50 A10,10 0 0 1 40,94 V42 A10,10 0 0 1 50,32 Z" />
+        </group>
 
-        <!-- haste e folhas -->
-        <path
-            android:pathData="M75,44 V30"
-            android:strokeColor="#2E7D32"
-            android:strokeWidth="4"
-            android:strokeLineCap="round" />
-        <path
-            android:fillColor="#2E7D32"
-            android:pathData="M75,32 Q56,16 48,34 Q65,42 75,32 Z" />
+        <!-- figurinha do meio -->
+        <group
+            android:pivotX="75"
+            android:pivotY="75"
+            android:rotation="10">
+            <path
+                android:fillColor="#F8BBD0"
+                android:pathData="M50,34 H102 A10,10 0 0 1 112,44 V96 A10,10 0 0 1 102,106 H50 A10,10 0 0 1 40,96 V44 A10,10 0 0 1 50,34 Z" />
+        </group>
+
+        <!-- figurinha da frente -->
+        <group
+            android:pivotX="75"
+            android:pivotY="75"
+            android:rotation="-2">
+            <path
+                android:fillColor="#FFF8E1"
+                android:pathData="M48,38 H102 A10,10 0 0 1 112,48 V102 A10,10 0 0 1 102,112 H48 A10,10 0 0 1 38,102 V48 A10,10 0 0 1 48,38 Z" />
+        </group>
+
+        <!-- folha -->
         <path
             android:fillColor="#43A047"
-            android:pathData="M75,32 Q94,14 103,32 Q86,42 75,32 Z" />
-
-        <!-- olhos -->
+            android:pathData="M60,98 Q52,62 82,52 Q98,50 96,64 Q94,90 60,98 Z" />
         <path
-            android:fillColor="#1B5E20"
-            android:pathData="M55,80 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 Z" />
-        <path
-            android:fillColor="#1B5E20"
-            android:pathData="M85,80 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 Z" />
-
-        <!-- boca e língua -->
-        <path
-            android:fillColor="#1B5E20"
-            android:pathData="M60,94 Q75,116 90,94 Z" />
-        <path
-            android:fillColor="#EF9A9A"
-            android:pathData="M68,105 Q75,99 82,105 Q75,110 68,105 Z" />
-
-        <!-- bochechas -->
-        <path
-            android:fillColor="#B3F48FB1"
-            android:pathData="M44,96 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 Z" />
-        <path
-            android:fillColor="#B3F48FB1"
-            android:pathData="M94,96 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 Z" />
+            android:pathData="M62,94 Q72,76 90,60"
+            android:strokeColor="#1B5E20"
+            android:strokeWidth="3"
+            android:strokeLineCap="round" />
     </group>
 </vector>
