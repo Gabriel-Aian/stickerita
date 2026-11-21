@@ -10,6 +10,7 @@ O Stickerita faz o mesmo caminho dos apps de figurinha conhecidos: converte cada
 - Converte cada uma para **WebP 512×512 com transparência e menos de 100 KB**, corrigindo a rotação das fotos.
 - Todas as imagens são redimensionadas para exatamente 512×512, sem manter a proporção (esticadas ou comprimidas, mesmo as menores que 512).
 - Monta o pacote (de 3 a 30 figurinhas), gera o ícone de 96×96 e permite escolher até 3 emojis por figurinha.
+- **Figurinhas animadas**: crie um pacote animado e use GIFs ou vídeos (até 10 s). Cada um vira um WebP animado 512×512 de até 500 KB; se for pesado, o app reduz a qualidade e a taxa de quadros até caber.
 - Botão **Adicionar ao WhatsApp** (ou WhatsApp Business) usando o contrato oficial.
 - Suas imagens e pacotes ficam só no aparelho e nunca são enviados a lugar nenhum.
 - **Atualiza sozinho pelo GitHub**: ao abrir, o app confere a última release e, havendo versão nova, mostra um aviso com o botão *Atualizar agora*. O botão de atualizar na barra superior força a verificação.
@@ -22,8 +23,8 @@ O Stickerita faz o mesmo caminho dos apps de figurinha conhecidos: converte cada
 
 ## Como usar
 
-1. **Novo pacote** → dê um nome e um autor.
-2. Toque no **+** e escolha as imagens.
+1. **Novo pacote** → dê um nome e um autor (ligue *Figurinhas animadas* para um pacote de GIFs e vídeos).
+2. Toque no **+** e escolha as imagens (ou GIFs e vídeos, no pacote animado).
 3. Com pelo menos 3 figurinhas, toque em **Adicionar ao WhatsApp**.
 
 Toque em uma figurinha para editar os emojis ou removê-la.
@@ -33,11 +34,13 @@ Toque em uma figurinha para editar os emojis ou removê-la.
 | Item | Regra |
 |---|---|
 | Figurinha | WebP estático, 512×512, até 100 KB |
+| Figurinha animada | WebP animado, 512×512, até 500 KB, até 10 s |
+| Mistura | um pacote é só estático ou só animado |
 | Ícone do pacote | 96×96, até 50 KB (gerado automaticamente) |
 | Pacote | de 3 a 30 figurinhas |
 | Emojis | até 3 por figurinha |
 
-Figurinhas animadas ainda não são suportadas.
+As figurinhas animadas só se mexem na pré-visualização do app a partir do Android 9; o WhatsApp as anima normalmente.
 
 ## Atualizações
 
@@ -76,6 +79,8 @@ app/src/main/java/io/github/gabrielaian/stickerita/
 ├── MainActivity.kt           telas (Jetpack Compose)
 ├── MainViewModel.kt          estado e ações
 ├── StickerConverter.kt       imagem → WebP 512×512 e ícone 96×96
+├── AnimatedConverter.kt      GIF ou vídeo → quadros e WebP animado
+├── WebPAnimMuxer.kt          monta o contêiner do WebP animado
 ├── PackRepository.kt         armazenamento local dos pacotes
 ├── StickerContentProvider.kt contrato de sticker packs do WhatsApp
 ├── Updater.kt                verificação e download de atualizações
@@ -85,7 +90,6 @@ app/src/main/java/io/github/gabrielaian/stickerita/
 ## Ideias para depois
 
 - Receber imagens pelo menu **Compartilhar** de outros apps.
-- Figurinhas animadas.
 - Remover fundo automaticamente.
 - Exportar e importar pacotes.
 

@@ -29,6 +29,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var busy by mutableStateOf(false)
         private set
 
+    /** Texto do progresso durante a conversão (ex.: "figurinha 2/5 · lendo quadros 12/150"). */
+    var busyText by mutableStateOf("")
+        private set
+
     /** Mensagem curta para a barra de avisos; a interface a consome e zera. */
     var message by mutableStateOf<String?>(null)
 
@@ -108,12 +112,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         packs = withContext(Dispatchers.IO) { repository.list() }
     }
 
-    fun createPack(name: String, author: String) {
+    fun createPack(name: String, author: String, animated: Boolean = false) {
         val cleanAuthor = author.trim()
         publisher = cleanAuthor
         prefs.edit().putString("publisher", cleanAuthor).apply()
         viewModelScope.launch {
-            val pack = withContext(Dispatchers.IO) { repository.create(name, cleanAuthor) }
+            val pack = withContext(Dispatchers.IO) { repository.create(name, cleanAuthor, animated) }
             reloadNow()
             selectedId = pack.id
         }
@@ -145,15 +149,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val app = getApplication<Application>()
         viewModelScope.launch {
             busy = true
+            busyText = ""
             val result = withContext(Dispatchers.IO) {
-                val room = MAX_STICKERS - (repository.get(packId)?.stickers?.size ?: 0)
+                val pack = repository.get(packId)
+                val animated = pack?.animated == true
+                val room = MAX_STICKERS - (pack?.stickers?.size ?: 0)
+                val queue = uris.take(room.coerceAtLeast(0))
                 var added = 0
                 var failed = 0
                 var reason: String? = null
-                uris.take(room.coerceAtLeast(0)).forEach { uri ->
+                queue.forEachIndexed { position, uri ->
                     try {
-                        val webp = StickerConverter.toSticker(app, uri)
-                        if (repository.addSticker(packId, webp) != null) {
+                        val saved = if (animated) {
+                            val prefix = if (queue.size > 1) "${position + 1}/${queue.size} · " else ""
+                            val converted = AnimatedConverter.convert(app, uri) { busyText = prefix + it }
+                            repository.addSticker(packId, converted.webp, converted.preview)
+                        } else {
+                            repository.addSticker(packId, StickerConverter.toSticker(app, uri))
+                        }
+                        if (saved != null) {
                             added++
                         } else {
                             failed++
@@ -171,12 +185,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             reloadNow()
             busy = false
+            busyText = ""
 
             val (added, failed, overflow, reason) = result
             val parts = mutableListOf<String>()
             if (added > 0) parts += if (added == 1) "1 figurinha adicionada" else "$added figurinhas adicionadas"
             if (failed > 0) {
-                val label = if (failed == 1) "1 imagem falhou" else "$failed imagens falharam"
+                val label = if (failed == 1) "1 arquivo falhou" else "$failed arquivos falharam"
                 parts += if (reason != null) "$label ($reason)" else label
             }
             if (overflow > 0) parts += "limite de $MAX_STICKERS por pacote"

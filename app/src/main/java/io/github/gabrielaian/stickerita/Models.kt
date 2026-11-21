@@ -23,6 +23,8 @@ data class StickerPack(
     val version: Int,
     val createdAt: Long,
     val stickers: List<Sticker>,
+    /** Pacote de figurinhas animadas. O WhatsApp não aceita pacotes que misturam os dois tipos. */
+    val animated: Boolean = false,
 ) {
     val isReady: Boolean
         get() = stickers.size in MIN_STICKERS..MAX_STICKERS

@@ -88,7 +88,7 @@ class StickerContentProvider : ContentProvider() {
                 .add("") // sticker_pack_license_agreement_website
                 .add(pack.version.toString())
                 .add(0) // whatsapp_will_not_cache_stickers
-                .add(0) // animated_sticker_pack
+                .add(if (pack.animated) 1 else 0) // animated_sticker_pack
         }
         return cursor
     }

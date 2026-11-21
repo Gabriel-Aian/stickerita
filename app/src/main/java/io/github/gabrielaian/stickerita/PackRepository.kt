@@ -27,7 +27,7 @@ class PackRepository(context: Context) {
 
     fun get(id: String): StickerPack? = synchronized(LOCK) { readLocked(id) }
 
-    fun create(name: String, publisher: String): StickerPack = synchronized(LOCK) {
+    fun create(name: String, publisher: String, animated: Boolean = false): StickerPack = synchronized(LOCK) {
         val id = "stickerita_" + UUID.randomUUID().toString().replace("-", "").take(12)
         File(root, id).mkdirs()
         val pack = StickerPack(
@@ -37,6 +37,7 @@ class PackRepository(context: Context) {
             version = 1,
             createdAt = System.currentTimeMillis(),
             stickers = emptyList(),
+            animated = animated,
         )
         write(pack)
         pack
@@ -48,11 +49,16 @@ class PackRepository(context: Context) {
         }
     }
 
-    fun addSticker(id: String, webp: ByteArray): StickerPack? = synchronized(LOCK) {
+    /**
+     * @param preview primeiro quadro como WebP estático; só para pacotes animados, onde serve
+     * de base para o ícone do pacote (o ícone precisa ser estático).
+     */
+    fun addSticker(id: String, webp: ByteArray, preview: ByteArray? = null): StickerPack? = synchronized(LOCK) {
         val pack = readLocked(id) ?: return@synchronized null
         if (pack.stickers.size >= MAX_STICKERS) return@synchronized null
         val fileName = "s_" + UUID.randomUUID().toString().replace("-", "").take(10) + ".webp"
         File(File(root, id), fileName).writeBytes(webp)
+        if (preview != null) File(File(root, id), fileName + PREVIEW_SUFFIX).writeBytes(preview)
         save(pack.copy(stickers = pack.stickers + Sticker(fileName, DEFAULT_EMOJI)))
     }
 
@@ -60,6 +66,7 @@ class PackRepository(context: Context) {
         val pack = readLocked(id) ?: return@synchronized null
         if (pack.stickers.none { it.fileName == fileName }) return@synchronized pack
         File(File(root, id), fileName).delete()
+        File(File(root, id), fileName + PREVIEW_SUFFIX).delete()
         save(pack.copy(stickers = pack.stickers.filterNot { it.fileName == fileName }))
     }
 
@@ -105,6 +112,7 @@ class PackRepository(context: Context) {
                     val item = array.getJSONObject(index)
                     Sticker(item.getString("file"), item.optString("emoji", DEFAULT_EMOJI))
                 },
+                animated = json.optBoolean("animated", false),
             )
         } catch (e: Exception) {
             null
@@ -121,7 +129,9 @@ class PackRepository(context: Context) {
             tray.delete()
         } else {
             try {
-                StickerConverter.writeTray(File(dir, first.fileName), tray)
+                // Em pacotes animados o ícone sai do primeiro quadro, que é estático.
+                val source = if (updated.animated) File(dir, first.fileName + PREVIEW_SUFFIX) else File(dir, first.fileName)
+                StickerConverter.writeTray(source, tray)
             } catch (e: Exception) {
                 // sem ícone o pacote simplesmente não fica pronto para o WhatsApp
                 tray.delete()
@@ -142,6 +152,7 @@ class PackRepository(context: Context) {
             .put("publisher", pack.publisher)
             .put("version", pack.version)
             .put("createdAt", pack.createdAt)
+            .put("animated", pack.animated)
             .put("stickers", array)
 
         val dir = File(root, pack.id)
@@ -155,5 +166,6 @@ class PackRepository(context: Context) {
 
     private companion object {
         val LOCK = Any()
+        const val PREVIEW_SUFFIX = ".preview"
     }
 }

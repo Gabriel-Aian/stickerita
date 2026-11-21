@@ -15,8 +15,8 @@ android {
         applicationId = "io.github.gabrielaian.stickerita"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.1.3"
     }
 
     signingConfigs {
@@ -69,4 +69,5 @@ dependencies {
     implementation("androidx.compose.material:material-icons-core")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("io.coil-kt:coil-gif:2.7.0")
 }

@@ -71,7 +71,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.os.Build
+import androidx.compose.material3.Switch
+import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.decode.ImageDecoderDecoder
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -118,6 +122,21 @@ private fun App(vm: MainViewModel = viewModel()) {
         PackScreen(vm, pack, snackbar)
     }
 }
+
+/** Carregador de imagens que também anima WebP/GIF (a animação exige Android 9 ou mais novo). */
+@Composable
+private fun rememberStickerLoader(): ImageLoader {
+    val context = LocalContext.current.applicationContext
+    // Um só carregador para todas as miniaturas, para dividirem o mesmo cache.
+    return stickerLoader ?: ImageLoader.Builder(context)
+        .components {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) add(ImageDecoderDecoder.Factory())
+        }
+        .build()
+        .also { stickerLoader = it }
+}
+
+private var stickerLoader: ImageLoader? = null
 
 // ---------------------------------------------------------------------------------------------
 // Lista de pacotes
@@ -188,9 +207,9 @@ private fun PackListScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
         NewPackDialog(
             defaultAuthor = vm.publisher,
             onDismiss = { showNew = false },
-            onCreate = { name, author ->
+            onCreate = { name, author, animated ->
                 showNew = false
-                vm.createPack(name, author)
+                vm.createPack(name, author, animated)
             },
         )
     }
@@ -274,7 +293,7 @@ private fun PackRow(vm: MainViewModel, pack: StickerPack) {
             Column(Modifier.padding(start = 12.dp)) {
                 Text(pack.name, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "${pack.stickers.size}/$MAX_STICKERS figurinhas · ${pack.publisher}",
+                    "${pack.stickers.size}/$MAX_STICKERS figurinhas${if (pack.animated) " animadas" else ""} · ${pack.publisher}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -295,6 +314,7 @@ private fun Thumb(file: File?, size: Dp) {
         if (file != null) {
             AsyncImage(
                 model = file,
+                imageLoader = rememberStickerLoader(),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
@@ -309,10 +329,11 @@ private fun Thumb(file: File?, size: Dp) {
 private fun NewPackDialog(
     defaultAuthor: String,
     onDismiss: () -> Unit,
-    onCreate: (name: String, author: String) -> Unit,
+    onCreate: (name: String, author: String, animated: Boolean) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var author by remember { mutableStateOf(defaultAuthor) }
+    var animated by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -331,11 +352,27 @@ private fun NewPackDialog(
                     label = { Text("Autor") },
                     singleLine = true,
                 )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Figurinhas animadas", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Usa GIFs e vídeos. Não dá para misturar com figurinhas comuns no mesmo pacote.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = animated, onCheckedChange = { animated = it })
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onCreate(name, author) },
+                onClick = { onCreate(name, author, animated) },
                 enabled = name.isNotBlank() && author.isNotBlank(),
             ) { Text("Criar") }
         },
@@ -406,7 +443,16 @@ private fun PackScreen(vm: MainViewModel, pack: StickerPack, snackbar: SnackbarH
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            if (vm.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (vm.busy) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (vm.busyText.isNotEmpty()) {
+                    Text(
+                        text = "Convertendo: ${vm.busyText}",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
+            }
 
             Text(
                 text = if (pack.stickers.size < MIN_STICKERS) {
@@ -432,7 +478,13 @@ private fun PackScreen(vm: MainViewModel, pack: StickerPack, snackbar: SnackbarH
                             enabled = !vm.busy,
                             onClick = {
                                 picker.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                    PickVisualMediaRequest(
+                                        if (pack.animated) {
+                                            ActivityResultContracts.PickVisualMedia.ImageAndVideo
+                                        } else {
+                                            ActivityResultContracts.PickVisualMedia.ImageOnly
+                                        },
+                                    ),
                                 )
                             },
                         )
@@ -522,6 +574,7 @@ private fun StickerCell(file: File, emoji: String, onClick: () -> Unit) {
     ) {
         AsyncImage(
             model = file,
+            imageLoader = rememberStickerLoader(),
             contentDescription = "Figurinha",
             modifier = Modifier
                 .fillMaxSize()

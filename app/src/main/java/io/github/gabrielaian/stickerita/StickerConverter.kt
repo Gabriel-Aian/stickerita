@@ -87,7 +87,7 @@ object StickerConverter {
     }
 
     /** Reduz pela metade em etapas, cada eixo por conta própria, para evitar serrilhado. */
-    private fun scaleSmooth(source: Bitmap, targetW: Int, targetH: Int): Bitmap {
+    internal fun scaleSmooth(source: Bitmap, targetW: Int, targetH: Int): Bitmap {
         var current = source
         while (current.width / 2 >= targetW || current.height / 2 >= targetH) {
             val w = if (current.width / 2 >= targetW) current.width / 2 else current.width
@@ -113,7 +113,7 @@ object StickerConverter {
     }
 
     @Suppress("DEPRECATION")
-    private fun webpFormat(): Bitmap.CompressFormat =
+    internal fun webpFormat(): Bitmap.CompressFormat =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Bitmap.CompressFormat.WEBP_LOSSY
         } else {
