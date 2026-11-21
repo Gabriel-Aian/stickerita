@@ -32,6 +32,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var busy by mutableStateOf(false)
         private set
 
+    /** Vira true depois da primeira leitura dos pacotes (antes disso a lista vazia não significa nada). */
+    var loaded by mutableStateOf(false)
+        private set
+
     /** Texto do progresso durante a conversão (ex.: "figurinha 2/5 · lendo quadros 12/150"). */
     var busyText by mutableStateOf("")
         private set
@@ -62,14 +66,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         reload()
-        checkForUpdate()
     }
 
     @Suppress("DEPRECATION")
     private fun readInstalledVersion(app: Application): String =
         app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: "0"
 
+    private var updateChecked = false
+
+    /** A verificação automática roda uma vez por instância; a manual sempre roda. */
     fun checkForUpdate(manual: Boolean = false) {
+        if (!manual) {
+            if (updateChecked) return
+            updateChecked = true
+        }
         viewModelScope.launch {
             try {
                 val found = withContext(Dispatchers.IO) { Updater.check(installedVersion) }
@@ -113,9 +123,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun reloadNow() {
         packs = withContext(Dispatchers.IO) { repository.list() }
+        loaded = true
     }
 
-    fun createPack(name: String, author: String, animated: Boolean = false) {
+    fun createPack(name: String, author: String, animated: Boolean = false, onCreated: (String) -> Unit = {}) {
         val cleanAuthor = author.trim()
         publisher = cleanAuthor
         prefs.edit().putString("publisher", cleanAuthor).apply()
@@ -123,6 +134,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val pack = withContext(Dispatchers.IO) { repository.create(name, cleanAuthor, animated) }
             reloadNow()
             selectedId = pack.id
+            onCreated(pack.id)
         }
     }
 
@@ -151,9 +163,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Importação de figurinhas estáticas. */
     fun addImages(packId: String, uris: List<Uri>) {
         val app = getApplication<Application>()
+        busy = true
+        busyText = ""
         viewModelScope.launch {
-            busy = true
-            busyText = ""
             val result = withContext(Dispatchers.IO) {
                 val room = MAX_STICKERS - (repository.get(packId)?.stickers?.size ?: 0)
                 var added = 0
@@ -199,9 +211,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var job: AnimatedJob? = null
 
     fun startAnimatedImport(packId: String, uris: List<Uri>) {
+        busy = true
+        busyText = ""
         viewModelScope.launch {
-            busy = true
-            busyText = ""
             val room = withContext(Dispatchers.IO) {
                 (MAX_STICKERS - (repository.get(packId)?.stickers?.size ?: 0)).coerceAtLeast(0)
             }

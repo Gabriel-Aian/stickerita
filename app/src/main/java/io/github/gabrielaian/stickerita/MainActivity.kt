@@ -12,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -87,6 +88,14 @@ import coil.decode.ImageDecoderDecoder
 import java.io.File
 
 class MainActivity : ComponentActivity() {
+    private val model: MainViewModel by viewModels()
+
+    override fun onResume() {
+        super.onResume()
+        // A janela de "Compartilhar" pode ter mexido nos pacotes enquanto o app estava em segundo plano.
+        model.reload()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -102,6 +111,8 @@ class MainActivity : ComponentActivity() {
 private fun App(vm: MainViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
+
+    LaunchedEffect(Unit) { vm.checkForUpdate() }
 
     LaunchedEffect(vm.apkToInstall) {
         vm.apkToInstall?.let { apk ->
@@ -133,7 +144,7 @@ private fun App(vm: MainViewModel = viewModel()) {
 
 /** Carregador de imagens que também anima WebP/GIF (a animação exige Android 9 ou mais novo). */
 @Composable
-private fun rememberStickerLoader(): ImageLoader {
+internal fun rememberStickerLoader(): ImageLoader {
     val context = LocalContext.current.applicationContext
     // Um só carregador para todas as miniaturas, para dividirem o mesmo cache.
     return stickerLoader ?: ImageLoader.Builder(context)
@@ -567,7 +578,7 @@ private fun seconds(ms: Int): String = String.format("%.1f s", ms / 1000f)
 
 /** Escolha do trecho (até 10 s) de um GIF ou vídeo, com o primeiro e o último quadro do trecho. */
 @Composable
-private fun TrimDialog(
+internal fun TrimDialog(
     request: TrimRequest,
     onConfirm: (startMs: Int, endMs: Int) -> Unit,
     onSkip: () -> Unit,

@@ -11,6 +11,7 @@ O Stickerita faz o mesmo caminho dos apps de figurinha conhecidos: converte cada
 - Todas as imagens são redimensionadas para exatamente 512×512, sem manter a proporção (esticadas ou comprimidas, mesmo as menores que 512).
 - Monta o pacote (de 3 a 30 figurinhas), gera o ícone de 96×96 e permite escolher até 3 emojis por figurinha.
 - **Figurinhas animadas**: crie um pacote animado e use GIFs ou vídeos. Você escolhe o trecho de até 10 s (início e fim, com prévia dos quadros). Cada um vira um WebP animado 512×512 de até 500 KB; se for pesado, o app reduz a qualidade e a taxa de quadros até caber.
+- **Compartilhar direto para o Stickerita**: em qualquer app (WhatsApp, galeria, navegador), compartilhe uma imagem, GIF ou vídeo, escolha o Stickerita e uma janela rápida deixa você escolher ou criar o pacote, sem abrir o app.
 - Botão **Adicionar ao WhatsApp** (ou WhatsApp Business) usando o contrato oficial.
 - Suas imagens e pacotes ficam só no aparelho e nunca são enviados a lugar nenhum.
 - **Atualiza sozinho pelo GitHub**: ao abrir, o app confere a última release e, havendo versão nova, mostra um aviso com o botão *Atualizar agora*. O botão de atualizar na barra superior força a verificação.
@@ -28,6 +29,8 @@ O Stickerita faz o mesmo caminho dos apps de figurinha conhecidos: converte cada
 3. Com pelo menos 3 figurinhas, toque em **Adicionar ao WhatsApp**.
 
 Toque em uma figurinha para editar os emojis ou removê-la.
+
+**Atalho:** em qualquer app, use **Compartilhar → Stickerita** numa imagem, GIF ou vídeo. Escolha o pacote (ou crie um novo) e toque em **Adicionar**. Imagens comuns vão para pacotes estáticos; GIFs e vídeos, para pacotes animados.
 
 ## Limites (vêm do WhatsApp)
 
@@ -77,6 +80,7 @@ Cada tag `v*` enviada ao GitHub dispara o workflow `Build APK`, que compila, ass
 ```
 app/src/main/java/io/github/gabrielaian/stickerita/
 ├── MainActivity.kt           telas (Jetpack Compose)
+├── ShareActivity.kt          janela rápida do "Compartilhar"
 ├── MainViewModel.kt          estado e ações
 ├── StickerConverter.kt       imagem → WebP 512×512 e ícone 96×96
 ├── AnimatedConverter.kt      GIF ou vídeo → quadros e WebP animado
@@ -89,7 +93,6 @@ app/src/main/java/io/github/gabrielaian/stickerita/
 
 ## Ideias para depois
 
-- Receber imagens pelo menu **Compartilhar** de outros apps.
 - Remover fundo automaticamente.
 - Exportar e importar pacotes.
 
