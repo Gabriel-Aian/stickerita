@@ -25,12 +25,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -141,6 +143,8 @@ private fun App(vm: MainViewModel = viewModel()) {
         }
     }
 
+    vm.notesDialog?.let { NotesDialog(it, onClose = { vm.closeNotes() }) }
+
     BackHandler(enabled = vm.selectedId != null) { vm.selectedId = null }
 
     val pack = vm.selected
@@ -179,6 +183,9 @@ private fun PackListScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
             CenterAlignedTopAppBar(
                 title = { Text("Stickerita") },
                 actions = {
+                    IconButton(onClick = { vm.openHistory() }) {
+                        Icon(AppIcons.Sparkle, contentDescription = "Novidades")
+                    }
                     IconButton(onClick = { vm.checkForUpdate(manual = true) }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Verificar atualizações")
                     }
@@ -334,9 +341,41 @@ private fun UpdateBanner(vm: MainViewModel) {
                     },
                     modifier = Modifier.padding(top = 12.dp),
                 ) { Text("Atualizar agora") }
+                if (vm.updateNotes.isNotEmpty()) {
+                    TextButton(onClick = { vm.openUpdateNotes() }) {
+                        val count = vm.updateNotes.size
+                        Text("Ver novidades ($count ${if (count == 1) "versão" else "versões"})")
+                    }
+                }
             }
         }
     }
+}
+
+/** Notas de atualização: uma seção por versão, da mais nova para a mais antiga. */
+@Composable
+private fun NotesDialog(request: NotesRequest, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(request.title) },
+        text = {
+            Column(
+                Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (request.entries.isEmpty()) Text("Nenhuma nota disponível para essas versões.")
+                request.entries.forEach { entry ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Versão ${entry.version}", style = MaterialTheme.typography.titleSmall)
+                        entry.items.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Entendi") } },
+    )
 }
 
 @Composable
@@ -421,7 +460,14 @@ private fun PackControls(vm: MainViewModel) {
                         selected = vm.packView == mode,
                         onClick = { vm.updateView(mode) },
                         shape = SegmentedButtonDefaults.itemShape(index, PackView.entries.size),
-                        label = { Text(mode.label) },
+                        icon = {},
+                        label = {
+                            Icon(
+                                if (mode == PackView.LIST) AppIcons.ViewList else AppIcons.ViewGrid,
+                                contentDescription = mode.label,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
                     )
                 }
             }

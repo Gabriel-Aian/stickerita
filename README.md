@@ -17,6 +17,7 @@ O Stickerita faz o mesmo caminho dos apps de figurinha conhecidos: converte cada
 - Botão **Adicionar ao WhatsApp** (ou WhatsApp Business) usando o contrato oficial.
 - Suas imagens e pacotes ficam só no aparelho e nunca são enviados a lugar nenhum.
 - **Lista de pacotes personalizável**: visualização em lista ou em grade, filtro por tipo (todos, estáticos, animados) e ordem por mais recentes ou alfabética (A–Z e Z–A). As escolhas ficam salvas.
+- **Notas de atualização**: o aviso de atualização mostra o que mudou em cada versão que você ainda não tem, e depois de atualizar o app mostra o que entrou desde a última versão que você abriu. O histórico fica no botão de novidades da barra superior.
 - **Atualiza sozinho pelo GitHub**: ao abrir, o app confere a última release e, havendo versão nova, mostra um aviso com o botão *Atualizar agora*. O botão de atualizar na barra superior força a verificação.
 
 ## Instalar
@@ -54,7 +55,7 @@ O app só usa a rede para duas coisas: consultar a última release e baixar o AP
 
 O Android só aceita a atualização se o APK novo for assinado com a mesma chave do instalado e tiver `versionCode` maior. Para publicar uma versão:
 
-1. Aumente `versionCode` e `versionName` em `app/build.gradle.kts`.
+1. Aumente `versionCode` e `versionName` em `app/build.gradle.kts` e escreva as novidades da versão no topo de `app/src/main/assets/changelog.md` (`## x.y.z` e uma linha `- ...` por novidade).
 2. Faça o push em `main`.
 3. Crie uma release com a tag `v<versionName>` (ex.: `v0.1.3`). O workflow compila e anexa o APK.
 

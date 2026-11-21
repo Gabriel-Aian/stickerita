@@ -15,6 +15,9 @@ import java.io.File
 import java.text.Collator
 import java.util.Locale
 
+/** Janela de novidades: [markSeen] marca a versão instalada como vista ao fechar. */
+class NotesRequest(val title: String, val entries: List<ChangelogEntry>, val markSeen: Boolean)
+
 /** Arquivo animado esperando o recorte (position/total contam os arquivos da importação). */
 class TrimRequest(val uri: Uri, val durationMs: Int, val position: Int, val total: Int)
 
@@ -124,8 +127,67 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** APK baixado, à espera de ser entregue ao instalador pela interface. */
     var apkToInstall by mutableStateOf<File?>(null)
 
+    /** Janela de novidades aberta (null = fechada). */
+    var notesDialog by mutableStateOf<NotesRequest?>(null)
+        private set
+
+    /** Novidades das versões que o aviso de atualização está oferecendo. */
+    var updateNotes by mutableStateOf<List<ChangelogEntry>>(emptyList())
+        private set
+
     init {
         reload()
+        announceNewVersion(app)
+    }
+
+    /**
+     * Depois de uma atualização, mostra o que entrou em todas as versões desde a última que o
+     * usuário abriu (de 0.2.1 para 0.2.5, mostra as quatro). Instalação nova não mostra nada.
+     */
+    private fun announceNewVersion(app: Application) {
+        val last = prefs.getString("last_seen_version", null)
+        if (last == null && !prefs.contains("publisher")) {
+            markVersionSeen()
+            return
+        }
+        if (last != null && Updater.compareVersions(installedVersion, last) <= 0) return
+
+        val all = Changelog.loadLocal(app)
+        // Sem registro da versão anterior, mostramos só a atual em vez de todo o histórico.
+        val entries = if (last == null) {
+            all.filter { Updater.compareVersions(it.version, installedVersion) == 0 }
+        } else {
+            Changelog.between(all, last, installedVersion)
+        }
+        if (entries.isEmpty()) {
+            markVersionSeen()
+        } else {
+            notesDialog = NotesRequest(notesTitle(entries), entries, markSeen = true)
+        }
+    }
+
+    private fun notesTitle(entries: List<ChangelogEntry>) =
+        if (entries.size == 1) "Novidades da versão ${entries.first().version}" else "Novidades de ${entries.size} versões"
+
+    private fun markVersionSeen() {
+        prefs.edit().putString("last_seen_version", installedVersion).apply()
+    }
+
+    fun closeNotes() {
+        val request = notesDialog
+        notesDialog = null
+        if (request?.markSeen == true) markVersionSeen()
+    }
+
+    /** Histórico completo, aberto pelo botão de novidades. */
+    fun openHistory() {
+        val all = Changelog.between(Changelog.loadLocal(getApplication()), null, installedVersion)
+        notesDialog = NotesRequest("Histórico de versões", all, markSeen = false)
+    }
+
+    /** O que mudou nas versões que o aviso de atualização oferece. */
+    fun openUpdateNotes() {
+        if (updateNotes.isNotEmpty()) notesDialog = NotesRequest(notesTitle(updateNotes), updateNotes, markSeen = false)
     }
 
     @Suppress("DEPRECATION")
@@ -144,6 +206,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val found = withContext(Dispatchers.IO) { Updater.check(installedVersion) }
                 update = found
+                updateNotes = if (found == null) {
+                    emptyList()
+                } else {
+                    withContext(Dispatchers.IO) { Changelog.between(Changelog.fetchRemote(), installedVersion, found.version) }
+                }
                 if (manual) {
                     message = if (found == null) {
                         "Você já está na versão mais recente ($installedVersion)"
