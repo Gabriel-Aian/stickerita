@@ -25,7 +25,7 @@ object AnimatedConverter {
     private const val SIZE = StickerConverter.SIZE
     private const val FRAME_BYTES = SIZE * SIZE * 4
     private const val BASE_FPS = 15
-    private const val MAX_DURATION_MS = 10_000
+    const val MAX_DURATION_MS = 10_000
     private const val MAX_FRAMES = BASE_FPS * MAX_DURATION_MS / 1000
 
     /** O limite do WhatsApp é 500 KB; deixamos uma folga. */
@@ -42,7 +42,70 @@ object AnimatedConverter {
 
     private enum class Kind { GIF, VIDEO }
 
-    fun convert(context: Context, uri: Uri, onProgress: (String) -> Unit): Result {
+    /** Duração, em ms, do GIF ou do vídeo. */
+    @Suppress("DEPRECATION")
+    fun durationMs(context: Context, uri: Uri): Int {
+        val kind = detectKind(context, uri)
+            ?: throw IOException("Para figurinha animada, use um GIF ou um vídeo")
+        val duration = when (kind) {
+            Kind.GIF -> openMovie(context, uri).duration()
+            Kind.VIDEO -> {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(context, uri)
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toIntOrNull() ?: 0
+                } finally {
+                    retriever.release()
+                }
+            }
+        }
+        if (duration <= 0) throw IOException("Não consegui ler a duração do arquivo")
+        return duration
+    }
+
+    /** Quadro do GIF ou do vídeo no instante [timeMs], reduzido para a tela de recorte. */
+    @Suppress("DEPRECATION")
+    fun frameAt(context: Context, uri: Uri, timeMs: Int): Bitmap? = try {
+        val full = when (detectKind(context, uri)) {
+            Kind.GIF -> {
+                val movie = openMovie(context, uri)
+                val bitmap = Bitmap.createBitmap(movie.width(), movie.height(), Bitmap.Config.ARGB_8888)
+                movie.setTime(timeMs.coerceAtLeast(0) % movie.duration().coerceAtLeast(1))
+                movie.draw(Canvas(bitmap), 0f, 0f)
+                bitmap
+            }
+            Kind.VIDEO -> {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(context, uri)
+                    retriever.getFrameAtTime(timeMs.toLong() * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                } finally {
+                    retriever.release()
+                }
+            }
+            null -> null
+        }
+        full?.let {
+            val scale = 240f / maxOf(it.width, it.height)
+            if (scale >= 1f) it else Bitmap.createScaledBitmap(it, (it.width * scale).toInt().coerceAtLeast(1), (it.height * scale).toInt().coerceAtLeast(1), true)
+        }
+    } catch (e: Exception) {
+        null
+    }
+
+    @Suppress("DEPRECATION")
+    private fun openMovie(context: Context, uri: Uri): Movie {
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: throw IOException("Não consegui abrir o GIF")
+        val movie = Movie.decodeByteArray(bytes, 0, bytes.size) ?: throw IOException("Não consegui ler o GIF")
+        if (movie.duration() <= 0 || movie.width() <= 0 || movie.height() <= 0) {
+            throw IOException("O GIF não tem animação")
+        }
+        return movie
+    }
+
+    /** Converte o trecho de [startMs] a [endMs] (no máximo 10 s). */
+    fun convert(context: Context, uri: Uri, startMs: Int, endMs: Int, onProgress: (String) -> Unit): Result {
         val kind = detectKind(context, uri)
             ?: throw IOException("Para figurinha animada, use um GIF ou um vídeo")
 
@@ -52,8 +115,8 @@ object AnimatedConverter {
         val store = FrameStore(File(dir, "frames.raw"))
         try {
             when (kind) {
-                Kind.GIF -> readGif(context, uri, store, onProgress)
-                Kind.VIDEO -> readVideo(context, uri, store, onProgress)
+                Kind.GIF -> readGif(context, uri, startMs, endMs, store, onProgress)
+                Kind.VIDEO -> readVideo(context, uri, startMs, endMs, store, onProgress)
             }
             if (store.count < 2) throw IOException("A animação precisa de pelo menos 2 quadros")
             return compress(store, onProgress)
@@ -76,17 +139,13 @@ object AnimatedConverter {
     // ---- leitura dos quadros ----
 
     @Suppress("DEPRECATION")
-    private fun readGif(context: Context, uri: Uri, store: FrameStore, onProgress: (String) -> Unit) {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw IOException("Não consegui abrir o GIF")
-        val movie = Movie.decodeByteArray(bytes, 0, bytes.size)
-            ?: throw IOException("Não consegui ler o GIF")
+    private fun readGif(
+        context: Context, uri: Uri, startMs: Int, endMs: Int, store: FrameStore, onProgress: (String) -> Unit,
+    ) {
+        val movie = openMovie(context, uri)
         val duration = movie.duration()
-        if (duration <= 0 || movie.width() <= 0 || movie.height() <= 0) {
-            throw IOException("O GIF não tem animação")
-        }
 
-        val span = minOf(duration, MAX_DURATION_MS)
+        val span = (endMs - startMs).coerceIn(1, MAX_DURATION_MS)
         val frames = (span * BASE_FPS / 1000).coerceIn(2, MAX_FRAMES)
 
         val source = Bitmap.createBitmap(movie.width(), movie.height(), Bitmap.Config.ARGB_8888)
@@ -97,21 +156,21 @@ object AnimatedConverter {
         for (index in 0 until frames) {
             onProgress("lendo quadros ${index + 1}/$frames")
             source.eraseColor(Color.TRANSPARENT)
-            movie.setTime((frameTimeMs(index) % duration).toInt())
+            movie.setTime(((startMs + frameTimeMs(index)) % duration).toInt())
             movie.draw(sourceCanvas, 0f, 0f)
             drawSquare(targetCanvas, target, source)
             store.append(target)
         }
     }
 
-    private fun readVideo(context: Context, uri: Uri, store: FrameStore, onProgress: (String) -> Unit) {
+    private fun readVideo(
+        context: Context, uri: Uri, startMs: Int, endMs: Int, store: FrameStore, onProgress: (String) -> Unit,
+    ) {
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(context, uri)
-            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
-                ?: throw IOException("Não consegui ler a duração do vídeo")
-            val span = minOf(duration, MAX_DURATION_MS.toLong())
-            val frames = (span * BASE_FPS / 1000).toInt().coerceIn(2, MAX_FRAMES)
+            val span = (endMs - startMs).coerceIn(1, MAX_DURATION_MS)
+            val frames = (span * BASE_FPS / 1000).coerceIn(2, MAX_FRAMES)
 
             val target = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
             val targetCanvas = Canvas(target)
@@ -119,7 +178,7 @@ object AnimatedConverter {
             for (index in 0 until frames) {
                 onProgress("lendo quadros ${index + 1}/$frames")
                 val frame = retriever.getFrameAtTime(
-                    frameTimeMs(index) * 1000L,
+                    (startMs + frameTimeMs(index)) * 1000L,
                     MediaMetadataRetriever.OPTION_CLOSEST,
                 ) ?: continue
                 drawSquare(targetCanvas, target, frame)

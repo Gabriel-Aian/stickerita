@@ -13,6 +13,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+/** Arquivo animado esperando o recorte (position/total contam os arquivos da importação). */
+class TrimRequest(val uri: Uri, val durationMs: Int, val position: Int, val total: Int)
+
 private data class Import(val added: Int, val failed: Int, val overflow: Int, val reason: String?)
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -145,29 +148,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Importação de figurinhas estáticas. */
     fun addImages(packId: String, uris: List<Uri>) {
         val app = getApplication<Application>()
         viewModelScope.launch {
             busy = true
             busyText = ""
             val result = withContext(Dispatchers.IO) {
-                val pack = repository.get(packId)
-                val animated = pack?.animated == true
-                val room = MAX_STICKERS - (pack?.stickers?.size ?: 0)
-                val queue = uris.take(room.coerceAtLeast(0))
+                val room = MAX_STICKERS - (repository.get(packId)?.stickers?.size ?: 0)
                 var added = 0
                 var failed = 0
                 var reason: String? = null
-                queue.forEachIndexed { position, uri ->
+                uris.take(room.coerceAtLeast(0)).forEach { uri ->
                     try {
-                        val saved = if (animated) {
-                            val prefix = if (queue.size > 1) "${position + 1}/${queue.size} · " else ""
-                            val converted = AnimatedConverter.convert(app, uri) { busyText = prefix + it }
-                            repository.addSticker(packId, converted.webp, converted.preview)
-                        } else {
-                            repository.addSticker(packId, StickerConverter.toSticker(app, uri))
-                        }
-                        if (saved != null) {
+                        if (repository.addSticker(packId, StickerConverter.toSticker(app, uri)) != null) {
                             added++
                         } else {
                             failed++
@@ -185,17 +179,129 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             reloadNow()
             busy = false
-            busyText = ""
-
-            val (added, failed, overflow, reason) = result
-            val parts = mutableListOf<String>()
-            if (added > 0) parts += if (added == 1) "1 figurinha adicionada" else "$added figurinhas adicionadas"
-            if (failed > 0) {
-                val label = if (failed == 1) "1 arquivo falhou" else "$failed arquivos falharam"
-                parts += if (reason != null) "$label ($reason)" else label
-            }
-            if (overflow > 0) parts += "limite de $MAX_STICKERS por pacote"
-            message = parts.joinToString(" · ").ifEmpty { null }
+            report(result)
         }
+    }
+
+    // ---- GIFs e vídeos (pacotes animados), um arquivo por vez, com tela de recorte ----
+
+    private class AnimatedJob(val packId: String, val queue: ArrayDeque<Uri>, val total: Int, val overflow: Int) {
+        var current = 0
+        var added = 0
+        var failed = 0
+        var reason: String? = null
+    }
+
+    /** Arquivo à espera do recorte; a interface mostra a tela de recorte enquanto não for nulo. */
+    var trim by mutableStateOf<TrimRequest?>(null)
+        private set
+
+    private var job: AnimatedJob? = null
+
+    fun startAnimatedImport(packId: String, uris: List<Uri>) {
+        viewModelScope.launch {
+            busy = true
+            busyText = ""
+            val room = withContext(Dispatchers.IO) {
+                (MAX_STICKERS - (repository.get(packId)?.stickers?.size ?: 0)).coerceAtLeast(0)
+            }
+            val take = uris.take(room)
+            job = AnimatedJob(packId, ArrayDeque(take), take.size, uris.size - take.size)
+            nextAnimated()
+        }
+    }
+
+    private suspend fun nextAnimated() {
+        val current = job ?: return
+        val app = getApplication<Application>()
+        while (true) {
+            val uri = current.queue.removeFirstOrNull()
+            if (uri == null) {
+                finishAnimated()
+                return
+            }
+            current.current++
+            val duration = try {
+                withContext(Dispatchers.IO) { AnimatedConverter.durationMs(app, uri) }
+            } catch (e: Exception) {
+                current.failed++
+                current.reason = e.message ?: e.javaClass.simpleName
+                continue
+            }
+            // Vários arquivos curtos entram inteiros, sem perguntar; o resto passa pela tela de recorte.
+            if (duration <= AnimatedConverter.MAX_DURATION_MS && current.total > 1) {
+                convertAnimated(current, uri, 0, duration)
+                continue
+            }
+            trim = TrimRequest(uri, duration, current.current, current.total)
+            return
+        }
+    }
+
+    private suspend fun convertAnimated(current: AnimatedJob, uri: Uri, startMs: Int, endMs: Int) {
+        val app = getApplication<Application>()
+        val prefix = if (current.total > 1) "${current.current}/${current.total} · " else ""
+        withContext(Dispatchers.IO) {
+            try {
+                val converted = AnimatedConverter.convert(app, uri, startMs, endMs) { busyText = prefix + it }
+                if (repository.addSticker(current.packId, converted.webp, converted.preview) != null) {
+                    current.added++
+                } else {
+                    current.failed++
+                    current.reason = "não consegui salvar no pacote"
+                }
+            } catch (e: Exception) {
+                current.failed++
+                current.reason = e.message ?: e.javaClass.simpleName
+            } catch (e: OutOfMemoryError) {
+                current.failed++
+                current.reason = "memória insuficiente"
+            }
+        }
+        busyText = ""
+    }
+
+    fun confirmTrim(startMs: Int, endMs: Int) {
+        val request = trim ?: return
+        val current = job ?: return
+        trim = null
+        viewModelScope.launch {
+            convertAnimated(current, request.uri, startMs, endMs)
+            nextAnimated()
+        }
+    }
+
+    /** Pula o arquivo atual e segue para o próximo da fila. */
+    fun skipTrim() {
+        trim = null
+        viewModelScope.launch { nextAnimated() }
+    }
+
+    /** Cancela o que ainda não foi convertido; o que já foi adicionado fica. */
+    fun cancelImport() {
+        trim = null
+        job?.queue?.clear()
+        viewModelScope.launch { finishAnimated() }
+    }
+
+    private suspend fun finishAnimated() {
+        val current = job ?: return
+        job = null
+        reloadNow()
+        busy = false
+        busyText = ""
+        report(Import(current.added, current.failed, current.overflow, current.reason))
+    }
+
+    private fun report(result: Import) {
+        val (added, failed, overflow, reason) = result
+        val parts = mutableListOf<String>()
+        if (added > 0) parts += if (added == 1) "1 figurinha adicionada" else "$added figurinhas adicionadas"
+        if (failed > 0) {
+            val label = if (failed == 1) "1 arquivo falhou" else "$failed arquivos falharam"
+            parts += if (reason != null) "$label ($reason)" else label
+        }
+        if (overflow > 0) parts += "limite de $MAX_STICKERS por pacote"
+        message = parts.joinToString(" · ").ifEmpty { null }
     }
 }

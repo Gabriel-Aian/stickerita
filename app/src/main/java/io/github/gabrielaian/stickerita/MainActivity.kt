@@ -71,8 +71,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.graphics.Bitmap
 import android.os.Build
+import androidx.compose.foundation.Image
+import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Switch
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.asImageBitmap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.decode.ImageDecoderDecoder
@@ -393,7 +401,9 @@ private fun PackScreen(vm: MainViewModel, pack: StickerPack, snackbar: SnackbarH
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(),
     ) { uris ->
-        if (uris.isNotEmpty()) vm.addImages(pack.id, uris)
+        if (uris.isNotEmpty()) {
+            if (pack.animated) vm.startAnimatedImport(pack.id, uris) else vm.addImages(pack.id, uris)
+        }
     }
 
     val whatsApp = rememberLauncherForActivityResult(
@@ -511,6 +521,15 @@ private fun PackScreen(vm: MainViewModel, pack: StickerPack, snackbar: SnackbarH
         }
     }
 
+    vm.trim?.let { request ->
+        TrimDialog(
+            request = request,
+            onConfirm = { start, end -> vm.confirmTrim(start, end) },
+            onSkip = { vm.skipTrim() },
+            onCancel = { vm.cancelImport() },
+        )
+    }
+
     editing?.let { sticker ->
         EditStickerDialog(
             sticker = sticker,
@@ -542,6 +561,110 @@ private fun PackScreen(vm: MainViewModel, pack: StickerPack, snackbar: SnackbarH
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } },
         )
     }
+}
+
+private fun seconds(ms: Int): String = String.format("%.1f s", ms / 1000f)
+
+/** Escolha do trecho (até 10 s) de um GIF ou vídeo, com o primeiro e o último quadro do trecho. */
+@Composable
+private fun TrimDialog(
+    request: TrimRequest,
+    onConfirm: (startMs: Int, endMs: Int) -> Unit,
+    onSkip: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val context = LocalContext.current
+    val maxMs = AnimatedConverter.MAX_DURATION_MS.toFloat()
+    val duration = request.durationMs.toFloat()
+    val minMs = minOf(500f, duration)
+
+    var range by remember(request) { mutableStateOf(0f..minOf(duration, maxMs)) }
+    var previewStart by remember(request) { mutableIntStateOf(0) }
+    var previewEnd by remember(request) { mutableIntStateOf(minOf(duration, maxMs).toInt()) }
+
+    val startFrame by produceState<Bitmap?>(null, request, previewStart) {
+        value = withContext(Dispatchers.IO) { AnimatedConverter.frameAt(context, request.uri, previewStart) }
+    }
+    val endFrame by produceState<Bitmap?>(null, request, previewEnd) {
+        value = withContext(Dispatchers.IO) {
+            AnimatedConverter.frameAt(context, request.uri, (previewEnd - 66).coerceAtLeast(0))
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Cortar trecho") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (request.total > 1) {
+                    Text(
+                        "Arquivo ${request.position} de ${request.total}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (frame in listOf(startFrame, endFrame)) {
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            frame?.let {
+                                Image(
+                                    bitmap = it.asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit,
+                                )
+                            }
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Início ${seconds(range.start.toInt())}", style = MaterialTheme.typography.bodySmall)
+                    Text("Fim ${seconds(range.endInclusive.toInt())}", style = MaterialTheme.typography.bodySmall)
+                }
+                RangeSlider(
+                    value = range,
+                    onValueChange = { new ->
+                        var start = new.start
+                        var end = new.endInclusive
+                        // o trecho tem no máximo 10 s e no mínimo meio segundo
+                        if (end - start > maxMs) {
+                            if (start != range.start) end = start + maxMs else start = end - maxMs
+                        }
+                        if (end - start < minMs) {
+                            if (start != range.start) start = end - minMs else end = start + minMs
+                        }
+                        range = start.coerceAtLeast(0f)..end.coerceAtMost(duration)
+                    },
+                    onValueChangeFinished = {
+                        previewStart = range.start.toInt()
+                        previewEnd = range.endInclusive.toInt()
+                    },
+                    valueRange = 0f..duration,
+                )
+                Text(
+                    "Trecho de ${seconds((range.endInclusive - range.start).toInt())} " +
+                        "de ${seconds(request.durationMs)} (máximo ${seconds(maxMs.toInt())}).",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(range.start.toInt(), range.endInclusive.toInt()) }) { Text("Adicionar") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onCancel) { Text("Cancelar") }
+                TextButton(onClick = onSkip) { Text("Pular") }
+            }
+        },
+    )
 }
 
 @Composable
