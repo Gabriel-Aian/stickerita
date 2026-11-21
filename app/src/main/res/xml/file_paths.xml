@@ -3,4 +3,8 @@
     <cache-path
         name="updates"
         path="updates/" />
+    <!-- Mídias baixadas de posts do X, por pouco tempo, até virarem figurinha. -->
+    <cache-path
+        name="tweets"
+        path="tweets/" />
 </paths>

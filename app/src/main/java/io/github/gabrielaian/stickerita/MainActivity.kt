@@ -429,13 +429,8 @@ private fun PackScreen(vm: MainViewModel, pack: StickerPack, snackbar: SnackbarH
     }
 
     fun addToWhatsApp() {
-        val intent = Intent("com.whatsapp.intent.action.ENABLE_STICKER_PACK").apply {
-            putExtra("sticker_pack_id", pack.id)
-            putExtra("sticker_pack_authority", context.packageName + PROVIDER_SUFFIX)
-            putExtra("sticker_pack_name", pack.name)
-        }
         try {
-            whatsApp.launch(intent)
+            whatsApp.launch(whatsAppIntent(context, pack))
         } catch (e: ActivityNotFoundException) {
             vm.message = "WhatsApp não encontrado. Instale ou atualize o WhatsApp."
         }

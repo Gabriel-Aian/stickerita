@@ -1,5 +1,7 @@
 package io.github.gabrielaian.stickerita
 
+import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -8,14 +10,19 @@ import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -25,6 +32,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -36,6 +45,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -48,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -57,6 +68,23 @@ import kotlinx.coroutines.withContext
 class ShareActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // O app do X compartilha só o link do post: lemos as mídias dele e deixamos você escolher.
+        if (intent.type?.startsWith("text/") == true) {
+            val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
+            val postId = TweetLoader.postId(text)
+            if (postId == null) {
+                Toast.makeText(this, "Isso não parece um link de post do X", Toast.LENGTH_LONG).show()
+                finish()
+                return
+            }
+            setContent {
+                StickeritaTheme {
+                    TweetFlow(postId = postId, onFinish = { finish() })
+                }
+            }
+            return
+        }
 
         val uris = sharedUris(intent)
         if (uris.isEmpty()) {
@@ -131,6 +159,21 @@ private fun ShareScreen(uris: List<Uri>, onFinish: () -> Unit, vm: MainViewModel
     var author by remember(vm.publisher) { mutableStateOf(vm.publisher) }
     var submitting by remember { mutableStateOf(false) }
     var sawBusy by remember { mutableStateOf(false) }
+    var finishing by remember { mutableStateOf(false) }
+    var targetId by remember { mutableStateOf<String?>(null) }
+    var countBefore by remember { mutableStateOf(0) }
+    var sendToWhatsApp by remember { mutableStateOf(prefs.getBoolean("send_to_whatsapp", true)) }
+
+    val whatsApp = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val error = result.data?.getStringExtra("validation_error")
+        val text = when {
+            result.resultCode == Activity.RESULT_OK -> "Pacote atualizado no WhatsApp!"
+            error != null -> "O WhatsApp recusou o pacote: $error"
+            else -> null
+        }
+        text?.let { Toast.makeText(context.applicationContext, it, Toast.LENGTH_LONG).show() }
+        onFinish()
+    }
 
     val eligible = vm.packs.filter {
         it.stickers.size < MAX_STICKERS && if (it.animated) allMotion else !hasVideo
@@ -145,17 +188,36 @@ private fun ShareScreen(uris: List<Uri>, onFinish: () -> Unit, vm: MainViewModel
     LaunchedEffect(vm.busy, vm.trim) {
         if (vm.busy) {
             sawBusy = true
-        } else if (sawBusy && vm.trim == null) {
-            vm.message?.let {
-                Toast.makeText(context.applicationContext, it, Toast.LENGTH_LONG).show()
-                vm.message = null
+        } else if (sawBusy && vm.trim == null && !finishing) {
+            finishing = true
+            val pack = vm.packs.firstOrNull { it.id == targetId }
+            val grew = pack != null && pack.stickers.size > countBefore
+            var text = vm.message
+            vm.message = null
+            if (pack != null && grew && !pack.isReady) {
+                val missing = MIN_STICKERS - pack.stickers.size
+                text = listOfNotNull(text, "faltam $missing para enviar ao WhatsApp").joinToString(" · ")
             }
-            onFinish()
+            text?.let { Toast.makeText(context.applicationContext, it, Toast.LENGTH_LONG).show() }
+
+            if (pack != null && grew && pack.isReady && sendToWhatsApp) {
+                // O WhatsApp sempre pede a sua confirmação para adicionar ou atualizar o pacote.
+                try {
+                    whatsApp.launch(whatsAppIntent(context, pack))
+                } catch (e: ActivityNotFoundException) {
+                    Toast.makeText(context.applicationContext, "WhatsApp não encontrado", Toast.LENGTH_LONG).show()
+                    onFinish()
+                }
+            } else {
+                onFinish()
+            }
         }
     }
 
     fun start(packId: String, animated: Boolean) {
         prefs.edit().putString("last_pack", packId).apply()
+        targetId = packId
+        countBefore = vm.packs.firstOrNull { it.id == packId }?.stickers?.size ?: 0
         if (animated) vm.startAnimatedImport(packId, uris) else vm.addImages(packId, uris)
     }
 
@@ -219,6 +281,29 @@ private fun ShareScreen(uris: List<Uri>, onFinish: () -> Unit, vm: MainViewModel
                         singleLine = true,
                         enabled = !busyNow,
                     )
+                }
+
+                if (!mixed) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !busyNow) {
+                                sendToWhatsApp = !sendToWhatsApp
+                                prefs.edit().putBoolean("send_to_whatsapp", sendToWhatsApp).apply()
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = sendToWhatsApp,
+                            onCheckedChange = null,
+                            enabled = !busyNow,
+                            modifier = Modifier.padding(12.dp),
+                        )
+                        Text(
+                            "Atualizar no WhatsApp em seguida (com $MIN_STICKERS ou mais figurinhas)",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                 }
 
                 if (busyNow) {
@@ -304,6 +389,186 @@ private fun SharedThumb(uri: Uri, source: Source) {
                     contentScale = ContentScale.Fit,
                 )
             }
+        }
+    }
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// Link de post do X
+// ---------------------------------------------------------------------------------------------
+
+private sealed interface TweetState {
+    data object Loading : TweetState
+    data class Loaded(val media: List<TweetMedia>) : TweetState
+    data class Failed(val reason: String) : TweetState
+}
+
+/** Busca as mídias do post, deixa escolher quais viram figurinha e segue para a janela normal. */
+@Composable
+private fun TweetFlow(postId: String, onFinish: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var state by remember { mutableStateOf<TweetState>(TweetState.Loading) }
+    var selected by remember { mutableStateOf(setOf<Int>()) }
+    var downloading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var downloaded by remember { mutableStateOf<List<Uri>?>(null) }
+
+    LaunchedEffect(postId) {
+        state = try {
+            val media = withContext(Dispatchers.IO) { TweetLoader.fetch(postId) }
+            if (media.size == 1) selected = setOf(0)
+            TweetState.Loaded(media)
+        } catch (e: Exception) {
+            TweetState.Failed(e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    downloaded?.let { uris ->
+        ShareScreen(uris = uris, onFinish = onFinish)
+        return
+    }
+
+    val current = state
+    AlertDialog(
+        onDismissRequest = { if (!downloading) onFinish() },
+        title = { Text("Mídias do post") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                when (current) {
+                    TweetState.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(24.dp))
+                        Text("Buscando o post…", Modifier.padding(start = 12.dp))
+                    }
+                    is TweetState.Failed -> Text(
+                        "Não consegui ler o post (${current.reason}).",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    is TweetState.Loaded -> {
+                        if (current.media.isEmpty()) {
+                            Text("Este post não tem imagens, GIFs ou vídeos.")
+                        } else {
+                            if (current.media.size > 1) {
+                                Text(
+                                    "Toque nas mídias que quer transformar em figurinha.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                            Column(
+                                Modifier
+                                    .heightIn(max = 340.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                current.media.withIndex().chunked(2).forEach { row ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        row.forEach { (index, media) ->
+                                            MediaTile(
+                                                media = media,
+                                                selected = index in selected,
+                                                enabled = !downloading,
+                                                modifier = Modifier.weight(1f),
+                                                onClick = {
+                                                    selected = if (index in selected) selected - index else selected + index
+                                                },
+                                            )
+                                        }
+                                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (downloading) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text("Baixando…", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = current is TweetState.Loaded && selected.isNotEmpty() && !downloading,
+                onClick = {
+                    val loaded = current as? TweetState.Loaded
+                    if (loaded != null) {
+                        scope.launch {
+                            downloading = true
+                            error = null
+                            try {
+                                val picked = loaded.media.filterIndexed { index, _ -> index in selected }
+                                downloaded = withContext(Dispatchers.IO) {
+                                    picked.mapIndexed { index, media -> TweetLoader.download(context, media, index) }
+                                }
+                            } catch (e: Exception) {
+                                error = "Não consegui baixar (${e.message ?: e.javaClass.simpleName})."
+                                downloading = false
+                            }
+                        }
+                    }
+                },
+            ) { Text("Continuar") }
+        },
+        dismissButton = {
+            TextButton(enabled = !downloading, onClick = onFinish) { Text("Cancelar") }
+        },
+    )
+}
+
+@Composable
+private fun MediaTile(
+    media: TweetMedia,
+    selected: Boolean,
+    enabled: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        modifier
+            .aspectRatio(1f)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .then(if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
+            .clickable(enabled = enabled, onClick = onClick),
+    ) {
+        AsyncImage(
+            model = media.previewUrl ?: media.url,
+            imageLoader = rememberStickerLoader(),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
+        val label = when (media.kind) {
+            TweetMedia.Kind.PHOTO -> null
+            TweetMedia.Kind.VIDEO -> "Vídeo"
+            TweetMedia.Kind.GIF -> "GIF"
+        }
+        if (label != null) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(6.dp)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.85f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+        if (selected) {
+            Text(
+                "✓",
+                color = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50))
+                    .padding(horizontal = 7.dp, vertical = 1.dp),
+            )
         }
     }
 }
