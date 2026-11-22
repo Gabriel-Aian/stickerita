@@ -20,6 +20,7 @@ import java.io.IOException
 object StickerConverter {
     const val SIZE = 512
     const val TRAY_SIZE = 96
+    private const val APP_ICON_SIZE = 256
 
     /** O limite do WhatsApp é 100 KB; deixamos uma folga. */
     private const val MAX_BYTES = 95_000
@@ -27,6 +28,20 @@ object StickerConverter {
     fun toSticker(context: Context, uri: Uri): ByteArray {
         val source = decode(context, uri)
         return encode(resizeToSquare(source))
+    }
+
+    /**
+     * Ícone do pacote só para o app: qualquer imagem, cortada no centro em quadrado e reduzida.
+     * Não precisa seguir as regras do WhatsApp porque nunca é enviado para lá.
+     */
+    fun toAppIcon(context: Context, uri: Uri): ByteArray {
+        val source = decode(context, uri)
+        val side = minOf(source.width, source.height)
+        val square = Bitmap.createBitmap(source, (source.width - side) / 2, (source.height - side) / 2, side, side)
+        val icon = scaleSmooth(square, APP_ICON_SIZE, APP_ICON_SIZE)
+        val out = ByteArrayOutputStream()
+        icon.compress(Bitmap.CompressFormat.PNG, 100, out)
+        return out.toByteArray()
     }
 
     /** Gera o ícone do pacote (96x96 PNG) a partir de uma figurinha já pronta. */

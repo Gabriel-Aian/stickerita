@@ -68,6 +68,7 @@ import kotlinx.coroutines.withContext
 class ShareActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemeSettings.ensureLoaded(this)
 
         // O app do X compartilha só o link do post: lemos as mídias dele e deixamos você escolher.
         if (intent.type?.startsWith("text/") == true) {

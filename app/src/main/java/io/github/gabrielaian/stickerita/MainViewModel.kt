@@ -244,6 +244,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun stickerFile(pack: StickerPack, sticker: Sticker): File =
         repository.stickerFile(pack.id, sticker.fileName)
 
+    /** Miniatura do pacote no app: o ícone escolhido, ou a primeira figurinha. */
+    fun thumbFile(pack: StickerPack): File? =
+        if (pack.hasIcon) repository.iconFile(pack.id) else pack.stickers.firstOrNull()?.let { stickerFile(pack, it) }
+
+    fun setPackIcon(packId: String, uri: Uri) {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val error = withContext(Dispatchers.IO) {
+                try {
+                    repository.setIcon(packId, StickerConverter.toAppIcon(app, uri))
+                    null
+                } catch (e: Exception) {
+                    e.message ?: e.javaClass.simpleName
+                }
+            }
+            if (error != null) message = "Não consegui usar essa imagem ($error)"
+            reloadNow()
+        }
+    }
+
+    fun clearPackIcon(packId: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.clearIcon(packId) }
+            reloadNow()
+        }
+    }
+
     fun reload() {
         viewModelScope.launch { reloadNow() }
     }

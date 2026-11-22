@@ -1,5 +1,9 @@
 # Novidades do Stickerita
 
+## 0.2.6
+- Aparência: nova opção na barra superior para escolher a cor de fundo e a cor dos botões do app, com prévia na hora, amostras prontas e código hexadecimal. O texto muda sozinho para continuar legível.
+- Ícone do pacote: em cada pacote, escolha qualquer imagem para ser o ícone dele na lista do app. Ela não entra no pacote e não vai para o WhatsApp.
+
 ## 0.2.5
 - Links de post do TikTok (experimental): compartilhe o link de um post para o Stickerita e escolha as mídias. O app lê o post no próprio aparelho, sem login, e usa a versão do vídeo sem marca d'água quando o TikTok a oferece. Pode parar de funcionar se o TikTok mudar a página.
 

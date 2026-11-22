@@ -16,6 +16,7 @@ O Stickerita faz o mesmo caminho dos apps de figurinha conhecidos: converte cada
 - Depois de adicionar pelo Compartilhar, o app já pede ao WhatsApp para atualizar o pacote (quando ele tem 3 figurinhas ou mais). O WhatsApp sempre pede a sua confirmação.
 - Botão **Adicionar ao WhatsApp** (ou WhatsApp Business) usando o contrato oficial.
 - Suas imagens e pacotes ficam só no aparelho e nunca são enviados a lugar nenhum.
+- **Aparência**: escolha a cor de fundo e a cor dos botões do app (com prévia na hora) e, em cada pacote, uma imagem qualquer como ícone dele no app. O ícone fica só no aparelho e não entra no pacote nem vai ao WhatsApp, que continua usando a primeira figurinha.
 - **Lista de pacotes personalizável**: visualização em lista ou em grade, filtro por tipo (todos, estáticos, animados) e ordem por mais recentes ou alfabética (A–Z e Z–A). As escolhas ficam salvas.
 - **Posts do TikTok (experimental)**: compartilhe o link de um post do TikTok para o Stickerita e escolha as mídias. Funciona lendo a página pública do post, sem login; pode parar de funcionar quando o TikTok mudar a página ou pedir verificação. O TikTok proíbe extração automática de conteúdo nos seus termos, então use por sua conta e risco.
 - **Notas de atualização**: o aviso de atualização mostra o que mudou em cada versão que você ainda não tem, e depois de atualizar o app mostra o que entrou desde a última versão que você abriu. O histórico fica no botão de novidades da barra superior.
@@ -90,6 +91,8 @@ app/src/main/java/io/github/gabrielaian/stickerita/
 ├── TikTokLoader.kt           lê as mídias de um post do TikTok (experimental)
 ├── WhatsApp.kt               intent de adicionar pacote ao WhatsApp
 ├── MainViewModel.kt          estado e ações
+├── Theme.kt, ThemeSettings.kt  tema e cores escolhidas pelo usuário
+├── Appearance.kt             janelas de aparência e de ícone do pacote
 ├── StickerConverter.kt       imagem → WebP 512×512 e ícone 96×96
 ├── AnimatedConverter.kt      GIF ou vídeo → quadros e WebP animado
 ├── WebPAnimMuxer.kt          monta o contêiner do WebP animado

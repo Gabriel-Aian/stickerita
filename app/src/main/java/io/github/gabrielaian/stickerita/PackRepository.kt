@@ -82,6 +82,30 @@ class PackRepository(context: Context) {
         )
     }
 
+    /** Arquivo do ícone próprio do pacote, só para a interface (não é entregue ao WhatsApp). */
+    fun iconFile(id: String): File = File(File(root, id), ICON_FILE)
+
+    /** Troca o ícone do pacote no app. Não mexe na versão do pacote: o WhatsApp não vê esse ícone. */
+    fun setIcon(id: String, png: ByteArray) {
+        synchronized(LOCK) {
+            if (!SAFE_ID.matches(id) || !File(root, id).isDirectory) return
+            val dir = File(root, id)
+            val temp = File(dir, "app_icon.tmp")
+            temp.writeBytes(png)
+            val target = File(dir, ICON_FILE)
+            if (!temp.renameTo(target)) {
+                target.writeBytes(png)
+                temp.delete()
+            }
+        }
+    }
+
+    fun clearIcon(id: String) {
+        synchronized(LOCK) {
+            if (SAFE_ID.matches(id)) File(File(root, id), ICON_FILE).delete()
+        }
+    }
+
     /** Arquivo de uma figurinha, para exibir na interface. */
     fun stickerFile(id: String, fileName: String): File = File(File(root, id), fileName)
 
@@ -113,6 +137,9 @@ class PackRepository(context: Context) {
                     Sticker(item.getString("file"), item.optString("emoji", DEFAULT_EMOJI))
                 },
                 animated = json.optBoolean("animated", false),
+                iconStamp = File(File(root, id), ICON_FILE).let {
+                    if (it.isFile) maxOf(it.lastModified(), 1L) else 0L
+                },
             )
         } catch (e: Exception) {
             null
@@ -167,5 +194,6 @@ class PackRepository(context: Context) {
     private companion object {
         val LOCK = Any()
         const val PREVIEW_SUFFIX = ".preview"
+        const val ICON_FILE = "app_icon.png"
     }
 }

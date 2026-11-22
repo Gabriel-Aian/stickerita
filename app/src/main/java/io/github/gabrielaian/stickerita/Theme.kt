@@ -1,11 +1,20 @@
 package io.github.gabrielaian.stickerita
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
 private val LightColors = lightColorScheme(
     primary = Color(0xFF2E7D32),
@@ -33,10 +42,82 @@ private val DarkColors = darkColorScheme(
     surfaceContainerHighest = Color(0xFF2C352B),
 )
 
+/** Abaixo disso o branco contrasta mais que o preto (ponto de igual contraste). */
+private const val LUMINANCE_SPLIT = 0.179f
+
+/** Cor de texto que melhor contrasta com [color]. */
+private fun contentOn(color: Color): Color =
+    if (color.luminance() > LUMINANCE_SPLIT) Color(0xFF1B1C1B) else Color.White
+
+/**
+ * Monta as cores a partir das escolhas do usuário. Com um fundo próprio, tudo que é "superfície"
+ * (cartões, menus, diálogos) sai de uma mistura do fundo com a cor do texto, e o texto vira
+ * claro ou escuro sozinho para continuar legível.
+ */
+private fun buildScheme(background: Int?, accent: Int?, systemDark: Boolean): ColorScheme {
+    var scheme = if (systemDark) DarkColors else LightColors
+
+    if (background != null) {
+        val base = Color(background)
+        val on = contentOn(base)
+        fun tone(amount: Float) = lerp(base, on, amount)
+        scheme = (if (on == Color.White) DarkColors else LightColors).copy(
+            background = base,
+            onBackground = on,
+            surface = base,
+            onSurface = on,
+            surfaceVariant = tone(0.12f),
+            onSurfaceVariant = lerp(on, base, 0.25f),
+            surfaceContainerLowest = tone(0.02f),
+            surfaceContainerLow = tone(0.04f),
+            surfaceContainer = tone(0.07f),
+            surfaceContainerHigh = tone(0.10f),
+            surfaceContainerHighest = tone(0.13f),
+            outline = lerp(on, base, 0.5f),
+            outlineVariant = lerp(on, base, 0.75f),
+        )
+    }
+
+    if (accent != null) {
+        val primary = Color(accent)
+        // O "container" (fundo do botão flutuante, dos filtros marcados etc.) é a cor escolhida bem suave.
+        val container = lerp(primary, scheme.background, 0.72f)
+        scheme = scheme.copy(
+            primary = primary,
+            onPrimary = contentOn(primary),
+            primaryContainer = container,
+            onPrimaryContainer = contentOn(container),
+            secondary = primary,
+            secondaryContainer = container,
+            onSecondaryContainer = contentOn(container),
+            surfaceTint = primary,
+        )
+    }
+    return scheme
+}
+
 @Composable
 fun StickeritaTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
-        content = content,
-    )
+    val scheme = buildScheme(ThemeSettings.background, ThemeSettings.accent, isSystemInDarkTheme())
+
+    // Ícones da barra de status e de navegação precisam acompanhar o fundo, que pode não ser o do sistema.
+    val lightBackground = scheme.background.luminance() > LUMINANCE_SPLIT
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = view.context.findActivity()?.window ?: return@SideEffect
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = lightBackground
+                isAppearanceLightNavigationBars = lightBackground
+            }
+        }
+    }
+
+    MaterialTheme(colorScheme = scheme, content = content)
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

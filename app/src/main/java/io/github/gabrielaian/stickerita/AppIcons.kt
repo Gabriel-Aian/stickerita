@@ -1,8 +1,10 @@
 package io.github.gabrielaian.stickerita
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathBuilder
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
@@ -81,5 +83,59 @@ object AppIcons {
                 close()
             }
         }.build()
+    }
+    /** Paleta: disco com furos para a tinta e para o polegar. */
+    val Palette: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Palette",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            path(fill = SolidColor(Color.Black), pathFillType = PathFillType.EvenOdd) {
+                circle(12f, 12f, 9.5f)
+                circle(8f, 10f, 1.5f)
+                circle(12f, 7.5f, 1.5f)
+                circle(16.2f, 10f, 1.5f)
+                circle(7.8f, 14.6f, 1.5f)
+                circle(16.5f, 16f, 2.4f)
+            }
+        }.build()
+    }
+
+    /** Moldura com sol e montanhas: escolher imagem. */
+    val Picture: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Picture",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            path(fill = SolidColor(Color.Black), pathFillType = PathFillType.EvenOdd) {
+                moveTo(3f, 4f)
+                lineTo(21f, 4f)
+                lineTo(21f, 20f)
+                lineTo(3f, 20f)
+                close()
+                // sol
+                circle(8.5f, 9f, 1.8f)
+                // montanhas
+                moveTo(5f, 18f)
+                lineTo(10f, 12f)
+                lineTo(13.5f, 16f)
+                lineTo(16f, 13.5f)
+                lineTo(19f, 18f)
+                close()
+            }
+        }.build()
+    }
+
+    private fun PathBuilder.circle(cx: Float, cy: Float, r: Float) {
+        moveTo(cx - r, cy)
+        arcToRelative(r, r, 0f, true, true, 2 * r, 0f)
+        arcToRelative(r, r, 0f, true, true, -2 * r, 0f)
+        close()
     }
 }

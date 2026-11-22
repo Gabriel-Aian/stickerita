@@ -109,6 +109,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemeSettings.ensureLoaded(this)
         enableEdgeToEdge()
         setContent {
             StickeritaTheme {
@@ -177,12 +178,18 @@ private var stickerLoader: ImageLoader? = null
 @Composable
 private fun PackListScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
     var showNew by remember { mutableStateOf(false) }
+    var showAppearance by remember { mutableStateOf(false) }
+
+    if (showAppearance) AppearanceDialog(onClose = { showAppearance = false })
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("Stickerita") },
                 actions = {
+                    IconButton(onClick = { showAppearance = true }) {
+                        Icon(AppIcons.Palette, contentDescription = "Aparência")
+                    }
                     IconButton(onClick = { vm.openHistory() }) {
                         Icon(AppIcons.Sparkle, contentDescription = "Novidades")
                     }
@@ -388,8 +395,7 @@ private fun PackRow(vm: MainViewModel, pack: StickerPack) {
             Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val first = pack.stickers.firstOrNull()
-            Thumb(file = first?.let { vm.stickerFile(pack, it) }, modifier = Modifier.size(56.dp))
+            Thumb(file = vm.thumbFile(pack), modifier = Modifier.size(56.dp))
             Column(Modifier.padding(start = 12.dp)) {
                 Text(pack.name, style = MaterialTheme.typography.titleMedium)
                 Text(
@@ -483,9 +489,8 @@ private fun PackCard(vm: MainViewModel, pack: StickerPack) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            val first = pack.stickers.firstOrNull()
             Thumb(
-                file = first?.let { vm.stickerFile(pack, it) },
+                file = vm.thumbFile(pack),
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f),
@@ -514,7 +519,7 @@ private fun PackCard(vm: MainViewModel, pack: StickerPack) {
 }
 
 @Composable
-private fun Thumb(file: File?, modifier: Modifier) {
+internal fun Thumb(file: File?, modifier: Modifier) {
     Box(
         modifier
             .clip(RoundedCornerShape(12.dp))
@@ -599,6 +604,9 @@ private fun PackScreen(vm: MainViewModel, pack: StickerPack, snackbar: SnackbarH
     val context = LocalContext.current
     var editing by remember { mutableStateOf<Sticker?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var showIcon by remember { mutableStateOf(false) }
+
+    if (showIcon) PackIconDialog(vm, pack, onClose = { showIcon = false })
 
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(),
@@ -637,6 +645,9 @@ private fun PackScreen(vm: MainViewModel, pack: StickerPack, snackbar: SnackbarH
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showIcon = true }) {
+                        Icon(AppIcons.Picture, contentDescription = "Ícone do pacote")
+                    }
                     IconButton(onClick = { confirmDelete = true }) {
                         Icon(Icons.Default.Delete, contentDescription = "Excluir pacote")
                     }
