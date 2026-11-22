@@ -1,5 +1,8 @@
 # Novidades do Stickerita
 
+## 0.2.5
+- Links de post do TikTok (experimental): compartilhe o link de um post para o Stickerita e escolha as mídias. O app lê o post no próprio aparelho, sem login, e usa a versão do vídeo sem marca d'água quando o TikTok a oferece. Pode parar de funcionar se o TikTok mudar a página.
+
 ## 0.2.4
 - Notas de atualização: antes de atualizar, o aviso mostra tudo o que mudou em cada versão que você ainda não tem; depois de atualizar, o app mostra o que entrou desde a última versão que você abriu.
 - Botão de novidades na barra superior para rever o histórico de versões.

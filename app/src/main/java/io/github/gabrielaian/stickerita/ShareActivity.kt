@@ -73,14 +73,19 @@ class ShareActivity : ComponentActivity() {
         if (intent.type?.startsWith("text/") == true) {
             val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
             val postId = TweetLoader.postId(text)
-            if (postId == null) {
-                Toast.makeText(this, "Isso não parece um link de post do X", Toast.LENGTH_LONG).show()
+            val tiktokLink = if (postId == null) TikTokLoader.findLink(text) else null
+            if (postId == null && tiktokLink == null) {
+                Toast.makeText(this, "Isso não parece um link de post do X ou do TikTok", Toast.LENGTH_LONG).show()
                 finish()
                 return
             }
             setContent {
                 StickeritaTheme {
-                    TweetFlow(postId = postId, onFinish = { finish() })
+                    if (postId != null) {
+                        PostFlow(key = postId, loader = { TweetLoader.fetch(postId) }, onFinish = { finish() })
+                    } else {
+                        PostFlow(key = tiktokLink!!, loader = { TikTokLoader.fetch(tiktokLink) }, onFinish = { finish() })
+                    }
                 }
             }
             return
@@ -404,9 +409,9 @@ private sealed interface TweetState {
     data class Failed(val reason: String) : TweetState
 }
 
-/** Busca as mídias do post, deixa escolher quais viram figurinha e segue para a janela normal. */
+/** Busca as mídias do post (X ou TikTok), deixa escolher quais viram figurinha e segue para a janela normal. */
 @Composable
-private fun TweetFlow(postId: String, onFinish: () -> Unit) {
+private fun PostFlow(key: String, loader: () -> List<TweetMedia>, onFinish: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -416,9 +421,9 @@ private fun TweetFlow(postId: String, onFinish: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var downloaded by remember { mutableStateOf<List<Uri>?>(null) }
 
-    LaunchedEffect(postId) {
+    LaunchedEffect(key) {
         state = try {
-            val media = withContext(Dispatchers.IO) { TweetLoader.fetch(postId) }
+            val media = withContext(Dispatchers.IO) { loader() }
             if (media.size == 1) selected = setOf(0)
             TweetState.Loaded(media)
         } catch (e: Exception) {

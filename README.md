@@ -17,6 +17,7 @@ O Stickerita faz o mesmo caminho dos apps de figurinha conhecidos: converte cada
 - Botão **Adicionar ao WhatsApp** (ou WhatsApp Business) usando o contrato oficial.
 - Suas imagens e pacotes ficam só no aparelho e nunca são enviados a lugar nenhum.
 - **Lista de pacotes personalizável**: visualização em lista ou em grade, filtro por tipo (todos, estáticos, animados) e ordem por mais recentes ou alfabética (A–Z e Z–A). As escolhas ficam salvas.
+- **Posts do TikTok (experimental)**: compartilhe o link de um post do TikTok para o Stickerita e escolha as mídias. Funciona lendo a página pública do post, sem login; pode parar de funcionar quando o TikTok mudar a página ou pedir verificação. O TikTok proíbe extração automática de conteúdo nos seus termos, então use por sua conta e risco.
 - **Notas de atualização**: o aviso de atualização mostra o que mudou em cada versão que você ainda não tem, e depois de atualizar o app mostra o que entrou desde a última versão que você abriu. O histórico fica no botão de novidades da barra superior.
 - **Atualiza sozinho pelo GitHub**: ao abrir, o app confere a última release e, havendo versão nova, mostra um aviso com o botão *Atualizar agora*. O botão de atualizar na barra superior força a verificação.
 
@@ -51,7 +52,7 @@ As figurinhas animadas só se mexem na pré-visualização do app a partir do An
 
 ## Atualizações
 
-O app só usa a rede para duas coisas: consultar a última release e baixar o APK no GitHub (`api.github.com` e `github.com`), e, **somente quando você compartilha um link de post do X**, ler as mídias do post. Nesse caso o número do post é enviado ao serviço público [FxEmbed](https://docs.fxembed.com/api/introduction) (`api.fxtwitter.com`) e as mídias são baixadas direto dos servidores do X (`twimg.com`). Suas imagens e figurinhas nunca são enviadas a lugar nenhum. Por isso o app pede as permissões de internet e de instalar apps; na primeira atualização o Android pede para você liberar a instalação por este app. O instalador do Android sempre pede a sua confirmação.
+O app só usa a rede para duas coisas: consultar a última release e baixar o APK no GitHub (`api.github.com` e `github.com`), e, **somente quando você compartilha um link de post do X**, ler as mídias do post. Nesse caso o número do post é enviado ao serviço público [FxEmbed](https://docs.fxembed.com/api/introduction) (`api.fxtwitter.com`) e as mídias são baixadas direto dos servidores do X (`twimg.com`). Ao compartilhar um link do TikTok, o app abre a página do post em `tiktok.com` e baixa a mídia dos servidores do TikTok, sem serviço intermediário. Suas imagens e figurinhas nunca são enviadas a lugar nenhum. Por isso o app pede as permissões de internet e de instalar apps; na primeira atualização o Android pede para você liberar a instalação por este app. O instalador do Android sempre pede a sua confirmação.
 
 O Android só aceita a atualização se o APK novo for assinado com a mesma chave do instalado e tiver `versionCode` maior. Para publicar uma versão:
 
@@ -86,6 +87,7 @@ app/src/main/java/io/github/gabrielaian/stickerita/
 ├── MainActivity.kt           telas (Jetpack Compose)
 ├── ShareActivity.kt          janela rápida do "Compartilhar" e escolha de mídias de posts do X
 ├── TweetLoader.kt            lê e baixa as mídias de um post do X
+├── TikTokLoader.kt           lê as mídias de um post do TikTok (experimental)
 ├── WhatsApp.kt               intent de adicionar pacote ao WhatsApp
 ├── MainViewModel.kt          estado e ações
 ├── StickerConverter.kt       imagem → WebP 512×512 e ícone 96×96

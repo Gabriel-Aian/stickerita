@@ -16,6 +16,8 @@ data class TweetMedia(
     val url: String,
     /** Imagem de prévia para a tela de escolha. */
     val previewUrl: String?,
+    /** Cabeçalhos exigidos para baixar (o TikTok pede navegador, origem e cookies). */
+    val headers: Map<String, String> = emptyMap(),
 ) {
     enum class Kind { PHOTO, VIDEO, GIF }
 }
@@ -96,10 +98,17 @@ object TweetLoader {
     }
 
     /** Só baixamos de servidores de mídia do X, por HTTPS. */
-    private fun allowed(url: String): Boolean {
+    internal fun allowed(url: String): Boolean {
         val parsed = try { URL(url) } catch (e: Exception) { return false }
-        return parsed.protocol == "https" && (parsed.host == "twimg.com" || parsed.host.endsWith(".twimg.com"))
+        return parsed.protocol == "https" && MEDIA_HOSTS.any { parsed.host == it || parsed.host.endsWith(".$it") }
     }
+
+    /** Servidores de mídia do X e do TikTok. */
+    private val MEDIA_HOSTS = listOf(
+        "twimg.com",
+        "tiktok.com", "tiktokcdn.com", "tiktokcdn-us.com", "tiktokv.com", "tiktokv.us",
+        "byteoversea.com", "ibytedtos.com", "ibyteimg.com", "muscdn.com",
+    )
 
     /** Pede a foto em tamanho grande (até 2048 px), que sobra para os 512 da figurinha. */
     private fun photoUrl(url: String): String =
@@ -128,8 +137,9 @@ object TweetLoader {
         val file = File(dir, "m_${System.nanoTime()}_$index.$extension")
 
         val connection = open(media.url)
+        media.headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
         try {
-            if (connection.responseCode != 200) throw IOException("o X respondeu ${connection.responseCode}")
+            if (connection.responseCode != 200) throw IOException("o servidor da mídia respondeu ${connection.responseCode}")
             var total = 0L
             connection.inputStream.use { input ->
                 file.outputStream().use { output ->
