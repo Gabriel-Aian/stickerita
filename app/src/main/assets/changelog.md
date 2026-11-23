@@ -1,5 +1,14 @@
 # Novidades do Stickerita
 
+## 0.3.0
+- Editor de imagem: recorte livre ou com proporção, preencher os 512×512 ou manter a proporção, legendas e emojis. Abre ao adicionar uma imagem sozinha e em "Editar imagem" na figurinha.
+- Gerenciamento do pacote: remover uma figurinha só, mover para o início, editar a imagem e mudar nome e autor. As opções agora aparecem em qualquer cor de fundo.
+- Figurinhas animadas bem mais rápidas e convertidas em segundo plano: você pode fechar a janela de compartilhar e recebe uma notificação quando terminar.
+- Compartilhar pacote como arquivo pelo WhatsApp (a um número, se quiser) e importar pacotes recebidos. Compartilhar o app: link ou APK.
+- Texto dos botões sempre legível, qualquer que seja a cor de fundo e a cor dos botões.
+- Posts do X: agora também pega mídia de posts que citam outro post e escolhe um vídeo mais leve.
+- Removido o suporte a links do TikTok, que não funcionava de forma confiável.
+
 ## 0.2.6
 - Aparência: nova opção na barra superior para escolher a cor de fundo e a cor dos botões do app, com prévia na hora, amostras prontas e código hexadecimal. O texto muda sozinho para continuar legível.
 - Ícone do pacote: em cada pacote, escolha qualquer imagem para ser o ícone dele na lista do app. Ela não entra no pacote e não vai para o WhatsApp.

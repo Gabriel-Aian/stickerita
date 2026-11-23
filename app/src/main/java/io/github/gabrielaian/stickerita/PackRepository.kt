@@ -82,29 +82,76 @@ class PackRepository(context: Context) {
         )
     }
 
-    /** Arquivo do ícone próprio do pacote, só para a interface (não é entregue ao WhatsApp). */
-    fun iconFile(id: String): File = File(File(root, id), ICON_FILE)
-
-    /** Troca o ícone do pacote no app. Não mexe na versão do pacote: o WhatsApp não vê esse ícone. */
+    /**
+     * Troca o ícone do pacote no app. Não mexe na versão do pacote: o WhatsApp não vê esse ícone.
+     * Cada troca usa um nome novo, o que faz as miniaturas na tela serem recarregadas.
+     */
     fun setIcon(id: String, png: ByteArray) {
         synchronized(LOCK) {
             if (!SAFE_ID.matches(id) || !File(root, id).isDirectory) return
             val dir = File(root, id)
-            val temp = File(dir, "app_icon.tmp")
-            temp.writeBytes(png)
-            val target = File(dir, ICON_FILE)
-            if (!temp.renameTo(target)) {
-                target.writeBytes(png)
-                temp.delete()
-            }
+            removeIcons(dir)
+            File(dir, ICON_PREFIX + System.currentTimeMillis() + ".png").writeBytes(png)
         }
     }
 
     fun clearIcon(id: String) {
         synchronized(LOCK) {
-            if (SAFE_ID.matches(id)) File(File(root, id), ICON_FILE).delete()
+            if (SAFE_ID.matches(id)) removeIcons(File(root, id))
         }
     }
+
+    private fun removeIcons(dir: File) {
+        dir.listFiles()?.filter { it.name.startsWith(ICON_PREFIX) }?.forEach { it.delete() }
+    }
+
+    /** Muda o nome e o autor do pacote. */
+    fun rename(id: String, name: String, publisher: String): StickerPack? = synchronized(LOCK) {
+        val pack = readLocked(id) ?: return@synchronized null
+        save(pack.copy(name = name.trim().take(MAX_TEXT), publisher = publisher.trim().take(MAX_TEXT)))
+    }
+
+    /** Coloca a figurinha em primeiro lugar, que é a que vira o ícone do pacote no WhatsApp. */
+    fun moveToFront(id: String, fileName: String): StickerPack? = synchronized(LOCK) {
+        val pack = readLocked(id) ?: return@synchronized null
+        val sticker = pack.stickers.firstOrNull { it.fileName == fileName } ?: return@synchronized pack
+        save(pack.copy(stickers = listOf(sticker) + pack.stickers.filterNot { it.fileName == fileName }))
+    }
+
+    /**
+     * Troca a imagem de uma figurinha (depois de editada), mantendo posição e emojis. A figurinha
+     * ganha um arquivo novo, o que atualiza a miniatura na tela.
+     */
+    fun replaceSticker(id: String, fileName: String, webp: ByteArray): StickerPack? = synchronized(LOCK) {
+        val pack = readLocked(id) ?: return@synchronized null
+        val old = pack.stickers.firstOrNull { it.fileName == fileName } ?: return@synchronized null
+        val newName = "s_" + UUID.randomUUID().toString().replace("-", "").take(10) + ".webp"
+        File(File(root, id), newName).writeBytes(webp)
+        File(File(root, id), fileName).delete()
+        File(File(root, id), fileName + PREVIEW_SUFFIX).delete()
+        save(pack.copy(stickers = pack.stickers.map { if (it.fileName == fileName) Sticker(newName, old.emoji) else it }))
+    }
+
+    /** Cria um pacote inteiro de uma vez (importação). Cada item: imagem, prévia (animadas) e emojis. */
+    fun importPack(
+        name: String,
+        publisher: String,
+        animated: Boolean,
+        items: List<Triple<ByteArray, ByteArray?, String>>,
+    ): StickerPack = synchronized(LOCK) {
+        val created = create(name, publisher, animated)
+        val dir = File(root, created.id)
+        val stickers = items.take(MAX_STICKERS).map { (webp, preview, emoji) ->
+            val fileName = "s_" + UUID.randomUUID().toString().replace("-", "").take(10) + ".webp"
+            File(dir, fileName).writeBytes(webp)
+            if (preview != null) File(dir, fileName + PREVIEW_SUFFIX).writeBytes(preview)
+            Sticker(fileName, sanitizeEmojis(emoji))
+        }
+        save(created.copy(stickers = stickers))
+    }
+
+    /** Arquivos do pacote para exportar: figurinhas e prévias. */
+    fun packDirectory(id: String): File? = if (SAFE_ID.matches(id)) File(root, id) else null
 
     /** Arquivo de uma figurinha, para exibir na interface. */
     fun stickerFile(id: String, fileName: String): File = File(File(root, id), fileName)
@@ -137,9 +184,7 @@ class PackRepository(context: Context) {
                     Sticker(item.getString("file"), item.optString("emoji", DEFAULT_EMOJI))
                 },
                 animated = json.optBoolean("animated", false),
-                iconStamp = File(File(root, id), ICON_FILE).let {
-                    if (it.isFile) maxOf(it.lastModified(), 1L) else 0L
-                },
+                iconName = File(root, id).listFiles()?.firstOrNull { it.name.startsWith(ICON_PREFIX) }?.name,
             )
         } catch (e: Exception) {
             null
@@ -194,6 +239,6 @@ class PackRepository(context: Context) {
     private companion object {
         val LOCK = Any()
         const val PREVIEW_SUFFIX = ".preview"
-        const val ICON_FILE = "app_icon.png"
+        const val ICON_PREFIX = "app_icon_"
     }
 }

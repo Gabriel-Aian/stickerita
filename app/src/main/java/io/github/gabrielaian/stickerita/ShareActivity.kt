@@ -74,19 +74,14 @@ class ShareActivity : ComponentActivity() {
         if (intent.type?.startsWith("text/") == true) {
             val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
             val postId = TweetLoader.postId(text)
-            val tiktokLink = if (postId == null) TikTokLoader.findLink(text) else null
-            if (postId == null && tiktokLink == null) {
-                Toast.makeText(this, "Isso não parece um link de post do X ou do TikTok", Toast.LENGTH_LONG).show()
+            if (postId == null) {
+                Toast.makeText(this, "Isso não parece um link de post do X", Toast.LENGTH_LONG).show()
                 finish()
                 return
             }
             setContent {
                 StickeritaTheme {
-                    if (postId != null) {
-                        PostFlow(key = postId, loader = { TweetLoader.fetch(postId) }, onFinish = { finish() })
-                    } else {
-                        PostFlow(key = tiktokLink!!, loader = { TikTokLoader.fetch(tiktokLink) }, onFinish = { finish() })
-                    }
+                    PostFlow(postId = postId, onFinish = { finish() })
                 }
             }
             return
@@ -191,10 +186,10 @@ private fun ShareScreen(uris: List<Uri>, onFinish: () -> Unit, vm: MainViewModel
     val busyNow = submitting || vm.busy
 
     // Terminou quando a importação começou, parou e não há recorte pendente.
-    LaunchedEffect(vm.busy, vm.trim) {
+    LaunchedEffect(vm.busy, vm.trim, vm.edit) {
         if (vm.busy) {
             sawBusy = true
-        } else if (sawBusy && vm.trim == null && !finishing) {
+        } else if (sawBusy && vm.trim == null && vm.edit == null && !finishing) {
             finishing = true
             val pack = vm.packs.firstOrNull { it.id == targetId }
             val grew = pack != null && pack.stickers.size > countBefore
@@ -224,7 +219,12 @@ private fun ShareScreen(uris: List<Uri>, onFinish: () -> Unit, vm: MainViewModel
         prefs.edit().putString("last_pack", packId).apply()
         targetId = packId
         countBefore = vm.packs.firstOrNull { it.id == packId }?.stickers?.size ?: 0
-        if (animated) vm.startAnimatedImport(packId, uris) else vm.addImages(packId, uris)
+        when {
+            animated -> vm.startAnimatedImport(packId, uris, offerWhatsApp = sendToWhatsApp)
+            // Uma imagem só abre o editor (recorte, legenda, emojis); várias entram direto.
+            uris.size == 1 -> vm.startEdit(packId, uris.first())
+            else -> vm.addImages(packId, uris)
+        }
     }
 
     val canAdd = !busyNow && !mixed && vm.loaded &&
@@ -306,7 +306,11 @@ private fun ShareScreen(uris: List<Uri>, onFinish: () -> Unit, vm: MainViewModel
                             modifier = Modifier.padding(12.dp),
                         )
                         Text(
-                            "Atualizar no WhatsApp em seguida (com $MIN_STICKERS ou mais figurinhas)",
+                            if (allMotion) {
+                                "Avisar para atualizar no WhatsApp quando terminar (com $MIN_STICKERS ou mais figurinhas)"
+                            } else {
+                                "Atualizar no WhatsApp em seguida (com $MIN_STICKERS ou mais figurinhas)"
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -347,6 +351,8 @@ private fun ShareScreen(uris: List<Uri>, onFinish: () -> Unit, vm: MainViewModel
             onCancel = { vm.cancelImport() },
         )
     }
+
+    ImageEditorHost(vm)
 }
 
 @Composable
@@ -410,9 +416,9 @@ private sealed interface TweetState {
     data class Failed(val reason: String) : TweetState
 }
 
-/** Busca as mídias do post (X ou TikTok), deixa escolher quais viram figurinha e segue para a janela normal. */
+/** Busca as mídias do post do X, deixa escolher quais viram figurinha e segue para a janela normal. */
 @Composable
-private fun PostFlow(key: String, loader: () -> List<TweetMedia>, onFinish: () -> Unit) {
+private fun PostFlow(postId: String, onFinish: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -422,9 +428,9 @@ private fun PostFlow(key: String, loader: () -> List<TweetMedia>, onFinish: () -
     var error by remember { mutableStateOf<String?>(null) }
     var downloaded by remember { mutableStateOf<List<Uri>?>(null) }
 
-    LaunchedEffect(key) {
+    LaunchedEffect(postId) {
         state = try {
-            val media = withContext(Dispatchers.IO) { loader() }
+            val media = withContext(Dispatchers.IO) { TweetLoader.fetch(postId) }
             if (media.size == 1) selected = setOf(0)
             TweetState.Loaded(media)
         } catch (e: Exception) {
@@ -454,7 +460,7 @@ private fun PostFlow(key: String, loader: () -> List<TweetMedia>, onFinish: () -
                     )
                     is TweetState.Loaded -> {
                         if (current.media.isEmpty()) {
-                            Text("Este post não tem imagens, GIFs ou vídeos.")
+                            Text("Este post não tem imagens, GIFs ou vídeos que eu consiga baixar.")
                         } else {
                             if (current.media.size > 1) {
                                 Text(
@@ -548,11 +554,14 @@ private fun MediaTile(
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
         )
-        val label = when (media.kind) {
+        val kindLabel = when (media.kind) {
             TweetMedia.Kind.PHOTO -> null
             TweetMedia.Kind.VIDEO -> "Vídeo"
             TweetMedia.Kind.GIF -> "GIF"
         }
+        val label = listOfNotNull(kindLabel, if (media.fromQuote) "post citado" else null)
+            .joinToString(" · ")
+            .ifEmpty { null }
         if (label != null) {
             Text(
                 label,

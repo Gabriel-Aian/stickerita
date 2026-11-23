@@ -52,7 +52,16 @@ object StickerConverter {
         out.outputStream().use { tray.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
-    private fun decode(context: Context, uri: Uri): Bitmap {
+    /**
+     * Lê a imagem para o editor, reduzida para no máximo [maxSide] px no lado maior: o editor
+     * trabalha sobre esse bitmap leve, e o recorte final é feito sobre ele.
+     */
+    fun decodeForEditor(context: Context, uri: Uri, maxSide: Int = 1600): Bitmap = decode(context, uri, maxSide)
+
+    /** WebP final (até 100 KB) de um bitmap já em 512x512. */
+    fun encodeBitmap(bitmap: Bitmap): ByteArray = encode(bitmap)
+
+    private fun decode(context: Context, uri: Uri, maxSide: Int? = null): Bitmap {
         val resolver = context.contentResolver
 
         // Com inJustDecodeBounds o decodeStream sempre devolve null: o resultado está em `bounds`.
@@ -68,8 +77,12 @@ object StickerConverter {
 
         // Decodifica já reduzida (entre 1024 e 2048 px no menor lado) para poupar memória.
         var sample = 1
-        while (bounds.outWidth / (sample * 2) >= SIZE * 2 && bounds.outHeight / (sample * 2) >= SIZE * 2) {
-            sample *= 2
+        if (maxSide != null) {
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxSide) sample *= 2
+        } else {
+            while (bounds.outWidth / (sample * 2) >= SIZE * 2 && bounds.outHeight / (sample * 2) >= SIZE * 2) {
+                sample *= 2
+            }
         }
         val options = BitmapFactory.Options().apply {
             inSampleSize = sample

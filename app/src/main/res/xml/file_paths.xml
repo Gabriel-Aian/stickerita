@@ -3,6 +3,10 @@
     <cache-path
         name="updates"
         path="updates/" />
+    <!-- Pacote exportado e APK do app, enquanto o aplicativo de destino lê o arquivo. -->
+    <cache-path
+        name="shared"
+        path="shared/" />
     <!-- Mídias baixadas de posts do X, por pouco tempo, até virarem figurinha. -->
     <cache-path
         name="tweets"

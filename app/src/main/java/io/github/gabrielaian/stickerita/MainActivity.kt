@@ -42,6 +42,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -107,14 +109,33 @@ class MainActivity : ComponentActivity() {
         model.reload()
     }
 
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ThemeSettings.ensureLoaded(this)
+        askForNotifications()
+        // Um arquivo .stickerita aberto com o Stickerita vira um pacote novo.
+        if (savedInstanceState == null && intent?.action == Intent.ACTION_VIEW) {
+            intent.data?.let { model.importPack(it) }
+        }
         enableEdgeToEdge()
         setContent {
             StickeritaTheme {
                 App()
             }
+        }
+    }
+
+    /** Pede, uma vez só, a permissão de avisar quando a conversão em segundo plano terminar. */
+    private fun askForNotifications() {
+        if (Build.VERSION.SDK_INT < 33) return
+        val prefs = getSharedPreferences("stickerita", MODE_PRIVATE)
+        if (prefs.getBoolean("asked_notifications", false)) return
+        prefs.edit().putBoolean("asked_notifications", true).apply()
+        val permission = android.Manifest.permission.POST_NOTIFICATIONS
+        if (checkSelfPermission(permission) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            notificationPermission.launch(permission)
         }
     }
 }
@@ -125,6 +146,9 @@ private fun App(vm: MainViewModel = viewModel()) {
     val context = LocalContext.current
 
     LaunchedEffect(Unit) { vm.checkForUpdate() }
+
+    // Cada figurinha que o serviço termina em segundo plano muda o pacote: relê a lista.
+    LaunchedEffect(ConversionState.completed) { vm.reload() }
 
     LaunchedEffect(vm.apkToInstall) {
         vm.apkToInstall?.let { apk ->
@@ -179,8 +203,15 @@ private var stickerLoader: ImageLoader? = null
 private fun PackListScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
     var showNew by remember { mutableStateOf(false) }
     var showAppearance by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+    var showShareApp by remember { mutableStateOf(false) }
 
     if (showAppearance) AppearanceDialog(onClose = { showAppearance = false })
+    if (showShareApp) ShareAppDialog(vm, onDismiss = { showShareApp = false })
+
+    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importPack(uri)
+    }
 
     Scaffold(
         topBar = {
@@ -195,6 +226,27 @@ private fun PackListScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                     }
                     IconButton(onClick = { vm.checkForUpdate(manual = true) }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Verificar atualizações")
+                    }
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Mais opções")
+                        }
+                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Importar pacote") },
+                                onClick = {
+                                    showMenu = false
+                                    importer.launch(arrayOf("*/*"))
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Compartilhar o Stickerita") },
+                                onClick = {
+                                    showMenu = false
+                                    showShareApp = true
+                                },
+                            )
+                        }
                     }
                 },
             )
@@ -605,14 +657,33 @@ private fun PackScreen(vm: MainViewModel, pack: StickerPack, snackbar: SnackbarH
     var editing by remember { mutableStateOf<Sticker?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     var showIcon by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+    var showRename by remember { mutableStateOf(false) }
+    var showShare by remember { mutableStateOf(false) }
 
     if (showIcon) PackIconDialog(vm, pack, onClose = { showIcon = false })
+    if (showShare) SharePackDialog(vm, pack, onDismiss = { showShare = false })
+    if (showRename) {
+        RenamePackDialog(
+            pack = pack,
+            onSave = { name, author ->
+                showRename = false
+                vm.renamePack(pack.id, name, author)
+            },
+            onDismiss = { showRename = false },
+        )
+    }
 
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(),
     ) { uris ->
         if (uris.isNotEmpty()) {
-            if (pack.animated) vm.startAnimatedImport(pack.id, uris) else vm.addImages(pack.id, uris)
+            when {
+                pack.animated -> vm.startAnimatedImport(pack.id, uris)
+                // Uma imagem só abre o editor; várias entram direto (cada uma pode ser editada depois).
+                uris.size == 1 -> vm.startEdit(pack.id, uris.first())
+                else -> vm.addImages(pack.id, uris)
+            }
         }
     }
 
@@ -645,11 +716,38 @@ private fun PackScreen(vm: MainViewModel, pack: StickerPack, snackbar: SnackbarH
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showIcon = true }) {
-                        Icon(AppIcons.Picture, contentDescription = "Ícone do pacote")
+                    IconButton(onClick = { showShare = true }) {
+                        Icon(Icons.Default.Share, contentDescription = "Compartilhar pacote")
                     }
-                    IconButton(onClick = { confirmDelete = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Excluir pacote")
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Mais opções")
+                        }
+                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Nome e autor") },
+                                onClick = {
+                                    showMenu = false
+                                    showRename = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Ícone do pacote no app") },
+                                leadingIcon = { Icon(AppIcons.Picture, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    showIcon = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Excluir pacote") },
+                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                                onClick = {
+                                    showMenu = false
+                                    confirmDelete = true
+                                },
+                            )
+                        }
                     }
                 },
             )
@@ -670,6 +768,16 @@ private fun PackScreen(vm: MainViewModel, pack: StickerPack, snackbar: SnackbarH
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
                 }
+            }
+
+            if (ConversionState.active && ConversionState.packId == pack.id) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(
+                    text = "Convertendo em segundo plano" +
+                        if (ConversionState.text.isNotEmpty()) ": ${ConversionState.text}" else "",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
             }
 
             Text(
@@ -738,19 +846,12 @@ private fun PackScreen(vm: MainViewModel, pack: StickerPack, snackbar: SnackbarH
         )
     }
 
+    ImageEditorHost(vm)
+
     editing?.let { sticker ->
-        EditStickerDialog(
-            sticker = sticker,
-            onDismiss = { editing = null },
-            onSave = { emoji ->
-                editing = null
-                vm.setEmoji(pack.id, sticker, emoji)
-            },
-            onRemove = {
-                editing = null
-                vm.removeSticker(pack.id, sticker)
-            },
-        )
+        // A figurinha pode ter saído do pacote (removida, editada): confere antes de mostrar.
+        val current = pack.stickers.firstOrNull { it.fileName == sticker.fileName }
+        if (current != null) StickerDialog(vm, pack, current, onDismiss = { editing = null })
     }
 
     if (confirmDelete) {
@@ -920,40 +1021,4 @@ private fun StickerCell(file: File, emoji: String, onClick: () -> Unit) {
                 .padding(4.dp),
         )
     }
-}
-
-@Composable
-private fun EditStickerDialog(
-    sticker: Sticker,
-    onDismiss: () -> Unit,
-    onSave: (String) -> Unit,
-    onRemove: () -> Unit,
-) {
-    var emoji by remember { mutableStateOf(sticker.emoji) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Editar figurinha") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "Os emojis (até 3) ajudam a achar a figurinha no teclado do WhatsApp.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                OutlinedTextField(
-                    value = emoji,
-                    onValueChange = { emoji = it.take(16) },
-                    label = { Text("Emojis") },
-                    singleLine = true,
-                )
-            }
-        },
-        confirmButton = {
-            Row {
-                TextButton(onClick = onRemove) { Text("Remover") }
-                TextButton(onClick = { onSave(emoji) }) { Text("Salvar") }
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
-    )
 }

@@ -17,8 +17,12 @@ O Stickerita faz o mesmo caminho dos apps de figurinha conhecidos: converte cada
 - Botão **Adicionar ao WhatsApp** (ou WhatsApp Business) usando o contrato oficial.
 - Suas imagens e pacotes ficam só no aparelho e nunca são enviados a lugar nenhum.
 - **Aparência**: escolha a cor de fundo e a cor dos botões do app (com prévia na hora) e, em cada pacote, uma imagem qualquer como ícone dele no app. O ícone fica só no aparelho e não entra no pacote nem vai ao WhatsApp, que continua usando a primeira figurinha.
+- **Editor de imagem**: ao adicionar uma imagem (ou ao tocar em uma figurinha estática e escolher "Editar imagem"), recorte livre ou com proporção (1:1, 4:3, 3:4, 16:9, 9:16), escolha entre preencher os 512×512 ou manter a proporção do recorte, e ponha legendas e emojis arrastáveis. O editor trabalha sobre uma versão reduzida da imagem, então é leve.
+- **Gerenciar o pacote**: remover uma figurinha só, mover para o início (a primeira é o ícone no WhatsApp), editar a imagem, mudar nome e autor.
+- **Conversão em segundo plano**: GIFs e vídeos são convertidos por um serviço, com notificação; dá para fechar a janela de compartilhar e a notificação oferece atualizar o pacote no WhatsApp.
+- **Compartilhar pacote**: exporta o pacote como arquivo `.stickerita` (ZIP) e envia pelo WhatsApp, a um número se quiser; quem recebe importa pelo Stickerita (⋮ › Importar pacote). O WhatsApp não tem como enviar um pacote de figurinhas direto a um contato.
+- **Compartilhar o app**: ⋮ › Compartilhar o Stickerita envia o link da versão mais recente ou o APK instalado.
 - **Lista de pacotes personalizável**: visualização em lista ou em grade, filtro por tipo (todos, estáticos, animados) e ordem por mais recentes ou alfabética (A–Z e Z–A). As escolhas ficam salvas.
-- **Posts do TikTok (experimental)**: compartilhe o link de um post do TikTok para o Stickerita e escolha as mídias. Funciona lendo a página pública do post, sem login; pode parar de funcionar quando o TikTok mudar a página ou pedir verificação. O TikTok proíbe extração automática de conteúdo nos seus termos, então use por sua conta e risco.
 - **Notas de atualização**: o aviso de atualização mostra o que mudou em cada versão que você ainda não tem, e depois de atualizar o app mostra o que entrou desde a última versão que você abriu. O histórico fica no botão de novidades da barra superior.
 - **Atualiza sozinho pelo GitHub**: ao abrir, o app confere a última release e, havendo versão nova, mostra um aviso com o botão *Atualizar agora*. O botão de atualizar na barra superior força a verificação.
 
@@ -53,7 +57,7 @@ As figurinhas animadas só se mexem na pré-visualização do app a partir do An
 
 ## Atualizações
 
-O app só usa a rede para duas coisas: consultar a última release e baixar o APK no GitHub (`api.github.com` e `github.com`), e, **somente quando você compartilha um link de post do X**, ler as mídias do post. Nesse caso o número do post é enviado ao serviço público [FxEmbed](https://docs.fxembed.com/api/introduction) (`api.fxtwitter.com`) e as mídias são baixadas direto dos servidores do X (`twimg.com`). Ao compartilhar um link do TikTok, o app abre a página do post em `tiktok.com` e baixa a mídia dos servidores do TikTok, sem serviço intermediário. Suas imagens e figurinhas nunca são enviadas a lugar nenhum. Por isso o app pede as permissões de internet e de instalar apps; na primeira atualização o Android pede para você liberar a instalação por este app. O instalador do Android sempre pede a sua confirmação.
+O app só usa a rede para duas coisas: consultar a última release e baixar o APK no GitHub (`api.github.com` e `github.com`), e, **somente quando você compartilha um link de post do X**, ler as mídias do post. Nesse caso o número do post é enviado ao serviço público [FxEmbed](https://docs.fxembed.com/api/introduction) (`api.fxtwitter.com`) e as mídias são baixadas direto dos servidores do X (`twimg.com`). Suas imagens e figurinhas nunca são enviadas a lugar nenhum. Por isso o app pede as permissões de internet e de instalar apps; na primeira atualização o Android pede para você liberar a instalação por este app. O instalador do Android sempre pede a sua confirmação.
 
 O Android só aceita a atualização se o APK novo for assinado com a mesma chave do instalado e tiver `versionCode` maior. Para publicar uma versão:
 
@@ -88,7 +92,11 @@ app/src/main/java/io/github/gabrielaian/stickerita/
 ├── MainActivity.kt           telas (Jetpack Compose)
 ├── ShareActivity.kt          janela rápida do "Compartilhar" e escolha de mídias de posts do X
 ├── TweetLoader.kt            lê e baixa as mídias de um post do X
-├── TikTokLoader.kt           lê as mídias de um post do TikTok (experimental)
+├── ConversionService.kt      converte GIFs e vídeos em segundo plano, com notificação
+├── VideoFrameReader.kt       lê os quadros do vídeo com MediaCodec (rápido)
+├── ImageEditor.kt            editor de imagem: recorte, proporção, legenda e emojis
+├── PackArchive.kt, Sharing.kt  pacote em arquivo (.stickerita) e compartilhamento
+├── Dialogs.kt                figurinha, nome do pacote e compartilhamento
 ├── WhatsApp.kt               intent de adicionar pacote ao WhatsApp
 ├── MainViewModel.kt          estado e ações
 ├── Theme.kt, ThemeSettings.kt  tema e cores escolhidas pelo usuário

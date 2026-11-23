@@ -16,8 +16,8 @@ data class TweetMedia(
     val url: String,
     /** Imagem de prévia para a tela de escolha. */
     val previewUrl: String?,
-    /** Cabeçalhos exigidos para baixar (o TikTok pede navegador, origem e cookies). */
-    val headers: Map<String, String> = emptyMap(),
+    /** Veio do post citado (quote), não do post em si. */
+    val fromQuote: Boolean = false,
 ) {
     enum class Kind { PHOTO, VIDEO, GIF }
 }
@@ -36,6 +36,9 @@ object TweetLoader {
     )
 
     private const val MAX_DOWNLOAD_BYTES = 80L * 1024 * 1024
+
+    /** Acima de ~2,5 Mbps o vídeo só fica maior, sem ganho visível em 512 px. */
+    private const val MAX_PREFERRED_BITRATE = 2_500_000
 
     /** Número do post, se o texto compartilhado tiver um link de post do X. */
     fun postId(text: String): String? = LINK.find(text)?.groupValues?.get(1)
@@ -66,49 +69,83 @@ object TweetLoader {
         throw IOException(lastError?.message ?: "falha de conexão")
     }
 
-    private fun parse(root: JSONObject): List<TweetMedia> {
+    internal fun parse(root: JSONObject): List<TweetMedia> {
         val post = root.optJSONObject("status") ?: root.optJSONObject("tweet")
             ?: throw IOException("resposta inesperada do serviço")
-        val media = post.optJSONObject("media") ?: return emptyList()
+
+        val result = mutableListOf<TweetMedia>()
+        collect(post.optJSONObject("media"), fromQuote = false, into = result)
+        // Em posts que só citam outro, a mídia está no post citado; também oferecemos a dele.
+        var quote = post.optJSONObject("quote")
+        var depth = 0
+        while (quote != null && depth < 2) {
+            collect(quote.optJSONObject("media"), fromQuote = true, into = result)
+            quote = quote.optJSONObject("quote")
+            depth++
+        }
+        return result.distinctBy { it.url }
+    }
+
+    private fun collect(media: JSONObject?, fromQuote: Boolean, into: MutableList<TweetMedia>) {
+        if (media == null) return
 
         val items = media.optJSONArray("all") ?: JSONArray().also { merged ->
-            for (key in listOf("photos", "videos")) {
+            for (key in listOf("photos", "videos", "gifs")) {
                 val array = media.optJSONArray(key) ?: continue
                 for (i in 0 until array.length()) merged.put(array.get(i))
             }
         }
 
-        val result = mutableListOf<TweetMedia>()
         for (i in 0 until items.length()) {
             val item = items.optJSONObject(i) ?: continue
-            val url = item.optString("url")
-            if (url.isBlank() || !allowed(url)) continue
             val type = item.optString("type")
-            val kind = when {
-                type == "photo" -> TweetMedia.Kind.PHOTO
-                type == "gif" -> TweetMedia.Kind.GIF
-                type == "video" -> TweetMedia.Kind.VIDEO
-                url.substringBefore('?').endsWith(".mp4") -> TweetMedia.Kind.VIDEO
-                else -> TweetMedia.Kind.PHOTO
+            val kind = when (type) {
+                "photo" -> TweetMedia.Kind.PHOTO
+                "gif" -> TweetMedia.Kind.GIF
+                "video" -> TweetMedia.Kind.VIDEO
+                else -> if (item.optString("url").substringBefore('?').endsWith(".mp4")) {
+                    TweetMedia.Kind.VIDEO
+                } else {
+                    TweetMedia.Kind.PHOTO
+                }
             }
+            val url = if (kind == TweetMedia.Kind.PHOTO) item.optString("url") else bestVideoUrl(item)
+            if (url.isBlank() || !allowed(url)) continue
             val preview = item.optString("thumbnail_url").takeIf { it.isNotBlank() && allowed(it) }
-            result += TweetMedia(kind, if (kind == TweetMedia.Kind.PHOTO) photoUrl(url) else url, preview)
+            into += TweetMedia(kind, if (kind == TweetMedia.Kind.PHOTO) photoUrl(url) else url, preview, fromQuote)
         }
-        return result
+    }
+
+    /**
+     * Escolhe o MP4 mais leve que ainda tem boa qualidade: a figurinha tem 512 px, então baixar
+     * o vídeo em 4K só gasta tempo e dados. Ignora listas HLS (.m3u8), que não são um arquivo só.
+     */
+    private fun bestVideoUrl(item: JSONObject): String {
+        val direct = item.optString("url")
+        val candidates = mutableListOf<Pair<Int, String>>() // bitrate, endereço
+        for (key in listOf("formats", "variants")) {
+            val array = item.optJSONArray(key) ?: continue
+            for (i in 0 until array.length()) {
+                val format = array.optJSONObject(i) ?: continue
+                val url = format.optString("url")
+                val container = format.optString("container").ifBlank { format.optString("content_type") }
+                val isMp4 = container.contains("mp4", ignoreCase = true) ||
+                    url.substringBefore('?').endsWith(".mp4")
+                if (url.isNotBlank() && isMp4 && allowed(url)) candidates += format.optInt("bitrate", 0) to url
+            }
+        }
+        if (candidates.isNotEmpty()) {
+            val sorted = candidates.sortedBy { it.first }
+            return (sorted.lastOrNull { it.first <= MAX_PREFERRED_BITRATE } ?: sorted.first()).second
+        }
+        return if (direct.substringBefore('?').endsWith(".m3u8")) "" else direct
     }
 
     /** Só baixamos de servidores de mídia do X, por HTTPS. */
-    internal fun allowed(url: String): Boolean {
+    private fun allowed(url: String): Boolean {
         val parsed = try { URL(url) } catch (e: Exception) { return false }
-        return parsed.protocol == "https" && MEDIA_HOSTS.any { parsed.host == it || parsed.host.endsWith(".$it") }
+        return parsed.protocol == "https" && (parsed.host == "twimg.com" || parsed.host.endsWith(".twimg.com"))
     }
-
-    /** Servidores de mídia do X e do TikTok. */
-    private val MEDIA_HOSTS = listOf(
-        "twimg.com",
-        "tiktok.com", "tiktokcdn.com", "tiktokcdn-us.com", "tiktokv.com", "tiktokv.us",
-        "byteoversea.com", "ibytedtos.com", "ibyteimg.com", "muscdn.com",
-    )
 
     /** Pede a foto em tamanho grande (até 2048 px), que sobra para os 512 da figurinha. */
     private fun photoUrl(url: String): String =
@@ -137,9 +174,8 @@ object TweetLoader {
         val file = File(dir, "m_${System.nanoTime()}_$index.$extension")
 
         val connection = open(media.url)
-        media.headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
         try {
-            if (connection.responseCode != 200) throw IOException("o servidor da mídia respondeu ${connection.responseCode}")
+            if (connection.responseCode != 200) throw IOException("o X respondeu ${connection.responseCode}")
             var total = 0L
             connection.inputStream.use { input ->
                 file.outputStream().use { output ->

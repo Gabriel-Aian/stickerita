@@ -2,6 +2,7 @@ package io.github.gabrielaian.stickerita
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -245,8 +246,127 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         repository.stickerFile(pack.id, sticker.fileName)
 
     /** Miniatura do pacote no app: o ícone escolhido, ou a primeira figurinha. */
-    fun thumbFile(pack: StickerPack): File? =
-        if (pack.hasIcon) repository.iconFile(pack.id) else pack.stickers.firstOrNull()?.let { stickerFile(pack, it) }
+    fun thumbFile(pack: StickerPack): File? = pack.iconName?.let { repository.stickerFile(pack.id, it) }
+        ?: pack.stickers.firstOrNull()?.let { stickerFile(pack, it) }
+
+    // ---- pacote em arquivo e compartilhamento ----
+
+    /** Importa um arquivo .stickerita como pacote novo. */
+    fun importPack(uri: Uri) {
+        val app = getApplication<Application>()
+        busy = true
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { PackArchive.import(app, repository, uri) }
+            }
+            reloadNow()
+            busy = false
+            val pack = result.getOrNull()
+            if (pack != null) {
+                selectedId = pack.id
+                message = "Pacote “${pack.name}” importado"
+            } else {
+                message = "Não consegui importar (${result.exceptionOrNull()?.message ?: "erro desconhecido"})"
+            }
+        }
+    }
+
+    /** Prepara o arquivo do pacote e entrega a intent de envio a [onReady]. */
+    fun sharePack(pack: StickerPack, viaWhatsApp: Boolean, phone: String?, onReady: (Intent) -> Unit) {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { PackArchive.export(app, repository, pack) } }
+            val file = result.getOrNull()
+            if (file != null) {
+                onReady(Sharing.packIntent(app, file, pack, viaWhatsApp, phone))
+            } else {
+                message = "Não consegui preparar o pacote (${result.exceptionOrNull()?.message ?: "erro desconhecido"})"
+            }
+        }
+    }
+
+    /** Intent para compartilhar o app: o link da versão mais recente ou o APK instalado. */
+    fun shareApp(asApk: Boolean, onReady: (Intent) -> Unit) {
+        if (!asApk) {
+            onReady(Sharing.appLinkIntent())
+            return
+        }
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { Sharing.copyInstalledApk(app, installedVersion) } }
+            val apk = result.getOrNull()
+            if (apk != null) onReady(Sharing.apkIntent(app, apk)) else message = "Não consegui preparar o APK"
+        }
+    }
+
+    // ---- editor de imagem ----
+
+    /** Imagem aberta no editor (null = fechado). */
+    var edit by mutableStateOf<EditRequest?>(null)
+        private set
+
+    /** Abre o editor para uma imagem nova, que vira figurinha ao terminar. */
+    fun startEdit(packId: String, uri: Uri) {
+        busy = true
+        edit = EditRequest(packId, uri, null)
+    }
+
+    /** Abre o editor sobre uma figurinha que já está no pacote. */
+    fun startEditSticker(pack: StickerPack, sticker: Sticker) {
+        edit = EditRequest(pack.id, Uri.fromFile(stickerFile(pack, sticker)), sticker.fileName)
+    }
+
+    fun cancelEdit() {
+        edit = null
+        busy = false
+    }
+
+    /** "Sem editar": a imagem vira figurinha do jeito de sempre (esticada em 512x512). */
+    fun skipEdit() {
+        val request = edit ?: return
+        edit = null
+        addImages(request.packId, listOf(request.source))
+    }
+
+    /** O editor terminou: [webp] é a figurinha pronta. */
+    fun confirmEdit(webp: ByteArray) {
+        val request = edit ?: return
+        edit = null
+        busy = true
+        viewModelScope.launch {
+            val failure = withContext(Dispatchers.IO) {
+                try {
+                    val saved = if (request.replaceFile != null) {
+                        repository.replaceSticker(request.packId, request.replaceFile, webp)
+                    } else {
+                        repository.addSticker(request.packId, webp)
+                    }
+                    if (saved == null) "o pacote não existe mais ou está cheio" else null
+                } catch (e: Exception) {
+                    e.message ?: e.javaClass.simpleName
+                }
+            }
+            reloadNow()
+            busy = false
+            message = failure?.let { "Não consegui salvar ($it)" }
+                ?: if (request.replaceFile != null) "Figurinha atualizada" else "1 figurinha adicionada"
+        }
+    }
+
+    fun renamePack(packId: String, name: String, author: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.rename(packId, name, author) }
+            reloadNow()
+        }
+    }
+
+    fun moveToFront(packId: String, sticker: Sticker) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.moveToFront(packId, sticker.fileName) }
+            reloadNow()
+            message = "Figurinha movida para o início: agora ela é o ícone do pacote no WhatsApp"
+        }
+    }
 
     fun setPackIcon(packId: String, uri: Uri) {
         val app = getApplication<Application>()
@@ -351,12 +471,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- GIFs e vídeos (pacotes animados), um arquivo por vez, com tela de recorte ----
 
-    private class AnimatedJob(val packId: String, val queue: ArrayDeque<Uri>, val total: Int, val overflow: Int) {
+    private class AnimatedJob(
+        val packId: String,
+        val packName: String,
+        val queue: ArrayDeque<Uri>,
+        val total: Int,
+        val overflow: Int,
+        val offerWhatsApp: Boolean,
+    ) {
         var current = 0
-        var added = 0
+
+        /** Arquivos já entregues ao serviço de conversão em segundo plano. */
+        var queued = 0
         var failed = 0
         var reason: String? = null
-        val notes = mutableListOf<String>()
     }
 
     /** Arquivo à espera do recorte; a interface mostra a tela de recorte enquanto não for nulo. */
@@ -365,15 +493,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private var job: AnimatedJob? = null
 
-    fun startAnimatedImport(packId: String, uris: List<Uri>) {
+    /**
+     * @param offerWhatsApp a notificação final oferece atualizar o pacote no WhatsApp
+     */
+    fun startAnimatedImport(packId: String, uris: List<Uri>, offerWhatsApp: Boolean = false) {
         busy = true
         busyText = ""
         viewModelScope.launch {
-            val room = withContext(Dispatchers.IO) {
-                (MAX_STICKERS - (repository.get(packId)?.stickers?.size ?: 0)).coerceAtLeast(0)
-            }
+            val pack = withContext(Dispatchers.IO) { repository.get(packId) }
+            val room = (MAX_STICKERS - (pack?.stickers?.size ?: 0)).coerceAtLeast(0)
             val take = uris.take(room)
-            job = AnimatedJob(packId, ArrayDeque(take), take.size, uris.size - take.size)
+            job = AnimatedJob(packId, pack?.name ?: "Pacote", ArrayDeque(take), take.size, uris.size - take.size, offerWhatsApp)
             nextAnimated()
         }
     }
@@ -405,28 +535,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun convertAnimated(current: AnimatedJob, uri: Uri, startMs: Int, endMs: Int) {
-        val app = getApplication<Application>()
-        val prefix = if (current.total > 1) "${current.current}/${current.total} · " else ""
-        withContext(Dispatchers.IO) {
-            try {
-                val converted = AnimatedConverter.convert(app, uri, startMs, endMs) { busyText = prefix + it }
-                if (repository.addSticker(current.packId, converted.webp, converted.preview) != null) {
-                    current.added++
-                    converted.note?.let { current.notes += it }
-                } else {
-                    current.failed++
-                    current.reason = "não consegui salvar no pacote"
-                }
-            } catch (e: Exception) {
-                current.failed++
-                current.reason = e.message ?: e.javaClass.simpleName
-            } catch (e: OutOfMemoryError) {
-                current.failed++
-                current.reason = "memória insuficiente"
-            }
+    /** A conversão em si roda no serviço, em segundo plano: aqui o arquivo só entra na fila. */
+    private fun convertAnimated(current: AnimatedJob, uri: Uri, startMs: Int, endMs: Int) {
+        try {
+            ConversionService.enqueue(
+                getApplication<Application>(),
+                ConversionService.Job(current.packId, current.packName, uri, startMs, endMs, current.offerWhatsApp),
+            )
+            current.queued++
+        } catch (e: Exception) {
+            current.failed++
+            current.reason = e.message ?: e.javaClass.simpleName
         }
-        busyText = ""
     }
 
     fun confirmTrim(startMs: Int, endMs: Int) {
@@ -458,12 +578,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         reloadNow()
         busy = false
         busyText = ""
-        val note = when (current.notes.size) {
-            0 -> null
-            1 -> current.notes.first()
-            else -> "${current.notes.size} reduzidas para caber nos 500 KB"
+        val parts = mutableListOf<String>()
+        if (current.queued > 0) {
+            parts += if (current.queued == 1) {
+                "Convertendo 1 figurinha em segundo plano; aviso quando terminar"
+            } else {
+                "Convertendo ${current.queued} figurinhas em segundo plano; aviso quando terminar"
+            }
         }
-        report(Import(current.added, current.failed, current.overflow, current.reason, note))
+        if (current.failed > 0) {
+            val label = if (current.failed == 1) "1 arquivo falhou" else "${current.failed} arquivos falharam"
+            parts += current.reason?.let { "$label ($it)" } ?: label
+        }
+        if (current.overflow > 0) parts += "limite de $MAX_STICKERS por pacote"
+        message = parts.joinToString(" · ").ifEmpty { null }
     }
 
     private fun report(result: Import) {

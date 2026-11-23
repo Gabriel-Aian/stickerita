@@ -104,7 +104,7 @@ internal fun AppearanceDialog(onClose: () -> Unit) {
                     )
                     ColorRow(
                         label = "Cor dos botões",
-                        color = MaterialTheme.colorScheme.primary,
+                        color = ThemeSettings.accent?.let { Color(it) } ?: MaterialTheme.colorScheme.primary,
                         value = ThemeSettings.accent?.let { "#" + hexOf(it) } ?: "Padrão",
                         onClick = { picking = ColorTarget.ACCENT },
                     )

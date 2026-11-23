@@ -12,6 +12,11 @@ import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 /**
  * Converte GIF ou vídeo em figurinha animada do WhatsApp:
@@ -181,11 +186,31 @@ object AnimatedConverter {
     private fun readVideo(
         context: Context, uri: Uri, startMs: Int, endMs: Int, store: FrameStore, onProgress: (String) -> Unit,
     ) {
+        val span = (endMs - startMs).coerceIn(1, MAX_DURATION_MS)
+        val frames = (span * BASE_FPS / 1000).coerceIn(2, MAX_FRAMES)
+
+        // Caminho rápido: decodifica o vídeo uma vez só. Se o aparelho não conseguir, usa o lento.
+        try {
+            VideoFrameReader.read(
+                context, uri, startMs, frames, BASE_FPS,
+                onFrame = { store.append(it) },
+                onProgress = { onProgress("lendo quadros $it/$frames") },
+            )
+            if (store.count >= 2) return
+        } catch (e: Exception) {
+            // cai no método lento
+        }
+        store.reset()
+        readVideoSlowly(context, uri, startMs, frames, store, onProgress)
+    }
+
+    /** Um pedido ao MediaMetadataRetriever por quadro: funciona em tudo, mas é bem mais lento. */
+    private fun readVideoSlowly(
+        context: Context, uri: Uri, startMs: Int, frames: Int, store: FrameStore, onProgress: (String) -> Unit,
+    ) {
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(context, uri)
-            val span = (endMs - startMs).coerceIn(1, MAX_DURATION_MS)
-            val frames = (span * BASE_FPS / 1000).coerceIn(2, MAX_FRAMES)
 
             val target = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
             val targetCanvas = Canvas(target)
@@ -215,8 +240,24 @@ object AnimatedConverter {
 
     // ---- compressão ----
 
+    /** Quantos quadros são codificados ao mesmo tempo. */
+    private val THREADS = minOf(4, Runtime.getRuntime().availableProcessors()).coerceAtLeast(1)
+
+    /** Cada thread usa o seu próprio bitmap de trabalho. */
+    private val workBitmaps = ThreadLocal<Bitmap>()
+
+    private fun workBitmap(): Bitmap =
+        workBitmaps.get() ?: Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888).also { workBitmaps.set(it) }
+
+    private fun <T> Future<T>.await(): T = try {
+        get()
+    } catch (e: ExecutionException) {
+        throw e.cause ?: e
+    }
+
     /** Codifica o quadro [index] segundo a tentativa: reduz, volta para 512x512 e comprime. */
-    private fun encodeFrame(store: FrameStore, index: Int, attempt: Attempt, bitmap: Bitmap, opaque: Boolean): ByteArray {
+    private fun encodeFrame(store: FrameStore, index: Int, attempt: Attempt, opaque: Boolean): ByteArray {
+        val bitmap = workBitmap()
         store.read(index, bitmap)
         // Vídeo não tem transparência: sem canal alfa o quadro fica menor.
         if (opaque) bitmap.setHasAlpha(false)
@@ -233,41 +274,64 @@ object AnimatedConverter {
         return out.toByteArray()
     }
 
-    private fun compress(store: FrameStore, opaque: Boolean, onProgress: (String) -> Unit): Result {
-        val bitmap = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
-
-        for ((attemptIndex, attempt) in ATTEMPTS.withIndex()) {
-            onProgress("compactando (${attemptIndex + 1}/${ATTEMPTS.size})")
-
-            val indices = (0 until store.count step attempt.step).toList()
-            if (indices.size < 2) continue
-
-            // Estima o tamanho por amostra: pula as tentativas que claramente não cabem.
-            val stride = maxOf(1, indices.size / 6)
-            val sample = indices.filterIndexed { position, _ -> position % stride == 0 }.take(8)
-            val average = sample.map { encodeFrame(store, it, attempt, bitmap, opaque).size + 32 }.average()
-            if (average * indices.size > MAX_BYTES * 1.3) continue
-
-            val stills = ArrayList<ByteArray>()
-            val durations = ArrayList<Int>()
-            var total = 0
-            var fits = true
-            for ((position, index) in indices.withIndex()) {
-                val still = encodeFrame(store, index, attempt, bitmap, opaque)
+    /**
+     * Codifica todos os quadros da tentativa em paralelo, em lotes. Devolve null assim que a soma
+     * passa do limite, sem gastar tempo com o resto.
+     */
+    private fun encodeAll(
+        pool: ExecutorService, store: FrameStore, indices: List<Int>, attempt: Attempt, opaque: Boolean,
+    ): List<ByteArray>? {
+        val stills = ArrayList<ByteArray>(indices.size)
+        var total = 0
+        var from = 0
+        val batchSize = THREADS * 3
+        while (from < indices.size) {
+            val batch = indices.subList(from, minOf(indices.size, from + batchSize))
+            val results = batch.map { index -> pool.submit(Callable { encodeFrame(store, index, attempt, opaque) }) }
+            for (future in results) {
+                val still = future.await()
                 total += still.size + 32 // 32 = cabeçalhos do pedaço de quadro
                 if (total > MAX_BYTES) {
-                    fits = false
-                    break
+                    results.forEach { it.cancel(true) }
+                    return null
                 }
-                // A duração sai da diferença entre instantes, para somar exatamente o tempo real.
-                val next = if (position + 1 < indices.size) indices[position + 1] else store.count
                 stills += still
-                durations += (frameTimeMs(next) - frameTimeMs(index)).toInt()
             }
-            if (!fits) continue
+            from += batchSize
+        }
+        return stills
+    }
 
-            val webp = WebPAnimMuxer.mux(stills, durations, SIZE, SIZE)
-            if (webp.size <= MAX_BYTES) return Result(webp, stills[0], describe(attempt))
+    private fun compress(store: FrameStore, opaque: Boolean, onProgress: (String) -> Unit): Result {
+        val pool = Executors.newFixedThreadPool(THREADS)
+        try {
+            for ((attemptIndex, attempt) in ATTEMPTS.withIndex()) {
+                onProgress("compactando (${attemptIndex + 1}/${ATTEMPTS.size})")
+
+                val indices = (0 until store.count step attempt.step).toList()
+                if (indices.size < 2) continue
+
+                // Estima o tamanho por amostra: pula as tentativas que claramente não cabem.
+                val stride = maxOf(1, indices.size / 6)
+                val sample = indices.filterIndexed { position, _ -> position % stride == 0 }.take(6)
+                val sizes = sample
+                    .map { index -> pool.submit(Callable { encodeFrame(store, index, attempt, opaque).size + 32 }) }
+                    .map { it.await() }
+                if (sizes.average() * indices.size > MAX_BYTES * 1.3) continue
+
+                val stills = encodeAll(pool, store, indices, attempt, opaque) ?: continue
+
+                // A duração sai da diferença entre instantes, para somar exatamente o tempo real.
+                val durations = indices.mapIndexed { position, index ->
+                    val next = if (position + 1 < indices.size) indices[position + 1] else store.count
+                    (frameTimeMs(next) - frameTimeMs(index)).toInt()
+                }
+
+                val webp = WebPAnimMuxer.mux(stills, durations, SIZE, SIZE)
+                if (webp.size <= MAX_BYTES) return Result(webp, stills[0], describe(attempt))
+            }
+        } finally {
+            pool.shutdownNow()
         }
         throw IOException(
             "ficou pesada demais para o WhatsApp (limite de 500 KB) mesmo reduzida: use um trecho mais curto",
@@ -292,6 +356,9 @@ object AnimatedConverter {
         private val channel = raf.channel
         private val buffer = ByteBuffer.allocateDirect(FRAME_BYTES)
 
+        /** A leitura roda em várias threads ao mesmo tempo: cada uma com o seu buffer. */
+        private val readBuffers = ThreadLocal.withInitial { ByteBuffer.allocateDirect(FRAME_BYTES) }
+
         var count = 0
             private set
 
@@ -303,16 +370,22 @@ object AnimatedConverter {
             count++
         }
 
+        /** Recomeça do zero (usado quando o caminho rápido falha no meio). */
+        fun reset() {
+            count = 0
+        }
+
         fun read(index: Int, into: Bitmap) {
-            buffer.clear()
+            val local = readBuffers.get() ?: throw IOException("Sem buffer de leitura")
+            local.clear()
             var position = index.toLong() * FRAME_BYTES
-            while (buffer.hasRemaining()) {
-                val read = channel.read(buffer, position)
+            while (local.hasRemaining()) {
+                val read = channel.read(local, position)
                 if (read < 0) throw IOException("Quadro temporário ilegível")
                 position += read
             }
-            buffer.rewind()
-            into.copyPixelsFromBuffer(buffer)
+            local.rewind()
+            into.copyPixelsFromBuffer(local)
         }
 
         fun close() {

@@ -49,6 +49,27 @@ private const val LUMINANCE_SPLIT = 0.179f
 private fun contentOn(color: Color): Color =
     if (color.luminance() > LUMINANCE_SPLIT) Color(0xFF1B1C1B) else Color.White
 
+/** Razão de contraste (1 a 21) entre duas cores, como nas diretrizes de acessibilidade. */
+private fun contrastRatio(a: Color, b: Color): Float {
+    val first = a.luminance()
+    val second = b.luminance()
+    return (maxOf(first, second) + 0.05f) / (minOf(first, second) + 0.05f)
+}
+
+/**
+ * Clareia ou escurece [color] (na direção de [toward]) só o necessário para ela ser legível como
+ * texto sobre todas as [surfaces]. Se já for legível, devolve a mesma cor.
+ */
+private fun readable(color: Color, toward: Color, surfaces: List<Color>, ratio: Float = 4.5f): Color {
+    var step = 0
+    var candidate = color
+    while (step < 20 && surfaces.any { contrastRatio(candidate, it) < ratio }) {
+        step++
+        candidate = lerp(color, toward, step * 0.05f)
+    }
+    return candidate
+}
+
 /**
  * Monta as cores a partir das escolhas do usuário. Com um fundo próprio, tudo que é "superfície"
  * (cartões, menus, diálogos) sai de uma mistura do fundo com a cor do texto, e o texto vira
@@ -79,7 +100,13 @@ private fun buildScheme(background: Int?, accent: Int?, systemDark: Boolean): Co
     }
 
     if (accent != null) {
-        val primary = Color(accent)
+        // A cor dos botões também é usada como texto (botões sem fundo, links): se ela for parecida
+        // com o fundo das janelas, vira uma versão mais clara ou mais escura da mesma cor.
+        val primary = readable(
+            color = Color(accent),
+            toward = contentOn(scheme.background),
+            surfaces = listOf(scheme.background, scheme.surfaceContainer, scheme.surfaceContainerHigh),
+        )
         // O "container" (fundo do botão flutuante, dos filtros marcados etc.) é a cor escolhida bem suave.
         val container = lerp(primary, scheme.background, 0.72f)
         scheme = scheme.copy(

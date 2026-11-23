@@ -41,14 +41,14 @@ data class StickerPack(
     /** Pacote de figurinhas animadas. O WhatsApp não aceita pacotes que misturam os dois tipos. */
     val animated: Boolean = false,
     /**
-     * Quando o ícone do pacote no app foi trocado (0 = sem ícone próprio). Vale só dentro do
-     * Stickerita: nunca vai para o WhatsApp. Muda a cada troca para a miniatura se atualizar.
+     * Nome do arquivo do ícone do pacote no app (null = sem ícone próprio). Vale só dentro do
+     * Stickerita: nunca vai para o WhatsApp. O nome muda a cada troca, para a miniatura atualizar.
      */
-    val iconStamp: Long = 0L,
+    val iconName: String? = null,
 ) {
     val isReady: Boolean
         get() = stickers.size in MIN_STICKERS..MAX_STICKERS
 
     val hasIcon: Boolean
-        get() = iconStamp != 0L
+        get() = iconName != null
 }
