@@ -582,14 +582,14 @@ private fun OverlayPane(
                     .size(sideDp)
                     .border(1.dp, MaterialTheme.colorScheme.outline)
                     .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .pointerInput(Unit) {
+                    .pointerInput(sidePx) {
                         // toque escolhe o item mais perto; arrastar move o escolhido
                         fun nearest(pos: Offset): Overlay? =
                             currentOverlays.minByOrNull { abs(it.x * sidePx - pos.x) + abs(it.y * sidePx - pos.y) }
                                 ?.takeIf { abs(it.x * sidePx - pos.x) + abs(it.y * sidePx - pos.y) < sidePx * 0.35f }
                         detectTapGestures { pos -> currentSelect(nearest(pos)?.id) }
                     }
-                    .pointerInput(Unit) {
+                    .pointerInput(sidePx) {
                         detectDragGestures(
                             onDragStart = { pos ->
                                 val hit = currentOverlays.minByOrNull { abs(it.x * sidePx - pos.x) + abs(it.y * sidePx - pos.y) }

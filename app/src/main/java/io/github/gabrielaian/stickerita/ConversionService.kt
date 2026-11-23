@@ -220,7 +220,17 @@ class ConversionService : Service() {
                 clipData = ClipData.newRawUri("media", job.uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            ContextCompat.startForegroundService(context, intent)
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (e: Exception) {
+                // O Android recusou ligar o serviço: desfaz, para a tela não ficar "convertendo" para sempre.
+                queue.remove(job)
+                if (queue.isEmpty() && !running.get()) {
+                    ConversionState.active = false
+                    ConversionState.packId = null
+                }
+                throw e
+            }
         }
 
         private fun createChannels(context: Context) {
