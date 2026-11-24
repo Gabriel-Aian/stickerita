@@ -1,5 +1,10 @@
 # Novidades do Stickerita
 
+## 0.3.1
+- Corrigido: a conversão de figurinhas animadas em segundo plano falhava com "ClosedChannelException" quando uma tentativa de compressão estourava o limite.
+- Corrigido: nas predefinições de proporção (1:1, 4:3…), o recorte encolhia a cada toque. Agora cada predefinição pega o maior recorte possível, centrado onde você estava.
+- Editor reformulado: não corta mais os controles (rolam quando faltar espaço e respeitam as barras e o teclado) e os botões viraram ícones.
+
 ## 0.3.0
 - Editor de imagem: recorte livre ou com proporção, preencher os 512×512 ou manter a proporção, legendas e emojis. Abre ao adicionar uma imagem sozinha e em "Editar imagem" na figurinha.
 - Gerenciamento do pacote: remover uma figurinha só, mover para o início, editar a imagem e mudar nome e autor. As opções agora aparecem em qualquer cor de fundo.

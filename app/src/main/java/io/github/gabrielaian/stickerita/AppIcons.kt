@@ -132,6 +132,78 @@ object AppIcons {
         }.build()
     }
 
+    private fun icon(name: String, evenOdd: Boolean = false, draw: PathBuilder.() -> Unit): ImageVector =
+        ImageVector.Builder(
+            name = name,
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = if (evenOdd) PathFillType.EvenOdd else PathFillType.NonZero,
+                pathBuilder = draw,
+            )
+        }.build()
+
+    private fun PathBuilder.polygon(vararg points: Float) {
+        moveTo(points[0], points[1])
+        for (i in 2 until points.size step 2) lineTo(points[i], points[i + 1])
+        close()
+    }
+
+    /** Triângulo com uma barra: seguir sem editar. */
+    val Skip: ImageVector by lazy {
+        icon("Skip") {
+            polygon(5f, 5f, 5f, 19f, 15f, 12f)
+            polygon(16.5f, 5f, 19f, 5f, 19f, 19f, 16.5f, 19f)
+        }
+    }
+
+    /** Dois cantos de esquadro: recortar. */
+    val Crop: ImageVector by lazy {
+        icon("Crop") {
+            polygon(17f, 15f, 19f, 15f, 19f, 7f, 17f, 5f, 9f, 5f, 9f, 7f, 17f, 7f)
+            polygon(7f, 17f, 7f, 1f, 5f, 1f, 5f, 5f, 1f, 5f, 1f, 7f, 5f, 7f, 5f, 17f, 7f, 19f, 17f, 19f, 17f, 23f, 19f, 23f, 19f, 19f, 23f, 19f, 23f, 17f)
+        }
+    }
+
+    /** Letra T: adicionar texto. */
+    val TextT: ImageVector by lazy {
+        icon("TextT") {
+            polygon(5f, 4f, 19f, 4f, 19f, 7f, 13.5f, 7f, 13.5f, 20f, 10.5f, 20f, 10.5f, 7f, 5f, 7f)
+        }
+    }
+
+    /** Carinha sorrindo: adicionar emoji. */
+    val Smile: ImageVector by lazy {
+        icon("Smile", evenOdd = true) {
+            circle(12f, 12f, 10f)
+            circle(12f, 12f, 8.2f)
+            circle(8.8f, 10f, 1.3f)
+            circle(15.2f, 10f, 1.3f)
+            moveTo(7f, 14f)
+            quadTo(12f, 20f, 17f, 14f)
+            quadTo(12f, 17f, 7f, 14f)
+            close()
+        }
+    }
+
+    /** Quadrado cheio: o recorte preenche os 512x512. */
+    val FitFill: ImageVector by lazy {
+        icon("FitFill") { polygon(3f, 3f, 21f, 3f, 21f, 21f, 3f, 21f) }
+    }
+
+    /** Quadro com um retângulo dentro: o recorte mantém a proporção. */
+    val FitKeep: ImageVector by lazy {
+        icon("FitKeep", evenOdd = true) {
+            polygon(3f, 3f, 21f, 3f, 21f, 21f, 3f, 21f)
+            polygon(4.5f, 4.5f, 19.5f, 4.5f, 19.5f, 19.5f, 4.5f, 19.5f)
+            polygon(7f, 9f, 17f, 9f, 17f, 15f, 7f, 15f)
+        }
+    }
+
     private fun PathBuilder.circle(cx: Float, cy: Float, r: Float) {
         moveTo(cx - r, cy)
         arcToRelative(r, r, 0f, true, true, 2 * r, 0f)

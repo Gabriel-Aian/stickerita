@@ -292,7 +292,10 @@ object AnimatedConverter {
                 val still = future.await()
                 total += still.size + 32 // 32 = cabeçalhos do pedaço de quadro
                 if (total > MAX_BYTES) {
-                    results.forEach { it.cancel(true) }
+                    // Nunca interrompe as threads: interromper uma leitura do FileChannel o fecha
+                    // para todos (ClosedChannelException). Cancela só o que não começou e espera o resto.
+                    results.forEach { it.cancel(false) }
+                    results.forEach { runCatching { it.get() } }
                     return null
                 }
                 stills += still
@@ -331,7 +334,7 @@ object AnimatedConverter {
                 if (webp.size <= MAX_BYTES) return Result(webp, stills[0], describe(attempt))
             }
         } finally {
-            pool.shutdownNow()
+            pool.shutdown()
         }
         throw IOException(
             "ficou pesada demais para o WhatsApp (limite de 500 KB) mesmo reduzida: use um trecho mais curto",

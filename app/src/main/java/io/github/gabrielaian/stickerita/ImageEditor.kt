@@ -24,10 +24,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +67,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -90,10 +100,10 @@ internal fun ImageEditorHost(vm: MainViewModel) {
 /** Como o recorte entra nos 512x512 da figurinha. */
 enum class FitMode(val label: String) {
     /** Estica até preencher tudo (como o app sempre fez). */
-    FILL("Preencher 512×512"),
+    FILL("Preencher"),
 
     /** Mantém a proporção do recorte; o que sobra fica transparente. */
-    KEEP("Manter proporção"),
+    KEEP("Proporção"),
 }
 
 /** Texto ou emoji sobre a figurinha. Posição e tamanho em fração da figurinha (0 a 1). */
@@ -204,15 +214,21 @@ private val EMOJIS = listOf(
 private const val PREVIEW = 512
 private const val MIN_CROP = 48f
 
-/** Ponto de partida: o maior recorte com a proporção [ratio] dentro de [from], com o mesmo centro. */
-private fun fitRatio(from: RectF, ratio: Float): RectF {
-    var w = from.width()
-    var h = w / ratio
-    if (h > from.height()) {
-        h = from.height()
-        w = h * ratio
+/**
+ * Recorte com a proporção [ratio]: o maior que cabe na imagem inteira ([w] x [h]), centrado no
+ * recorte atual e empurrado para dentro dos limites. Não depende do tamanho do recorte atual,
+ * então tocar na mesma predefinição (ou em várias) várias vezes dá sempre o mesmo resultado.
+ */
+private fun fitRatio(from: RectF, ratio: Float, w: Float, h: Float): RectF {
+    var cw = w
+    var ch = cw / ratio
+    if (ch > h) {
+        ch = h
+        cw = ch * ratio
     }
-    return RectF(from.centerX() - w / 2f, from.centerY() - h / 2f, from.centerX() + w / 2f, from.centerY() + h / 2f)
+    val left = (from.centerX() - cw / 2f).coerceIn(0f, max(0f, w - cw))
+    val top = (from.centerY() - ch / 2f).coerceIn(0f, max(0f, h - ch))
+    return RectF(left, top, left + cw, top + ch)
 }
 
 private fun pickGrip(pos: Offset, crop: RectF, scale: Float, slop: Float, edges: Boolean): Grip {
@@ -315,7 +331,12 @@ internal fun ImageEditorDialog(
 
     Dialog(
         onDismissRequest = onCancel,
-        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnClickOutside = false,
+            // a janela vai até as bordas e o conteúdo se afasta das barras e do teclado por conta própria
+            decorFitsSystemWindows = false,
+        ),
     ) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             val result = loaded
@@ -375,30 +396,55 @@ private fun EditorBody(
     var nextId by remember { mutableIntStateOf(1) }
     var saving by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize().systemBarsPadding()) {
+    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(enabled = !saving, onClick = onCancel) { Text("Cancelar") }
+            IconButton(enabled = !saving, onClick = onCancel) {
+                Icon(Icons.Filled.Close, contentDescription = "Cancelar")
+            }
             Text(
                 if (editingExisting) "Editar figurinha" else "Nova figurinha",
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
             )
-            if (onSkip != null) TextButton(enabled = !saving, onClick = onSkip) { Text("Sem editar") }
-            Button(
+            if (onSkip != null) {
+                IconButton(enabled = !saving, onClick = onSkip) {
+                    Icon(AppIcons.Skip, contentDescription = "Seguir sem editar")
+                }
+            }
+            FilledIconButton(
                 enabled = !saving,
                 onClick = {
                     saving = true
                     onDone(crop, mode, overlays) { saving = false }
                 },
-            ) { Text(if (saving) "Salvando…" else "Pronto") }
+            ) {
+                if (saving) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Filled.Check, contentDescription = "Pronto")
+                }
+            }
+            Box(Modifier.size(4.dp))
         }
 
         TabRow(selectedTabIndex = tab) {
-            Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Cortar") })
-            Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Legenda e emojis") })
+            Tab(
+                selected = tab == 0,
+                onClick = { tab = 0 },
+                icon = { Icon(AppIcons.Crop, contentDescription = null) },
+                text = { Text("Cortar", maxLines = 1) },
+            )
+            Tab(
+                selected = tab == 1,
+                onClick = { tab = 1 },
+                icon = { Icon(AppIcons.TextT, contentDescription = null) },
+                text = { Text("Texto", maxLines = 1) },
+            )
         }
 
         if (tab == 0) {
@@ -416,7 +462,7 @@ private fun EditorBody(
                             selected = ratioIndex == index,
                             onClick = {
                                 ratioIndex = index
-                                if (ratio != null) crop = fitRatio(crop, ratio)
+                                if (ratio != null) crop = fitRatio(crop, ratio, source.width.toFloat(), source.height.toFloat())
                             },
                             label = { Text(label) },
                         )
@@ -427,13 +473,20 @@ private fun EditorBody(
                         FilterChip(
                             selected = mode == option,
                             onClick = { mode = option },
-                            label = { Text(option.label) },
+                            label = { Text(option.label, maxLines = 1) },
+                            leadingIcon = {
+                                Icon(
+                                    if (option == FitMode.FILL) AppIcons.FitFill else AppIcons.FitKeep,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            },
                         )
                     }
                 }
                 Text(
                     if (mode == FitMode.FILL) {
-                        "O recorte é esticado até preencher os 512×512 da figurinha."
+                        "O recorte é esticado até preencher a figurinha (512×512)."
                     } else {
                         "O recorte mantém a proporção e o que sobra fica transparente."
                     },
@@ -572,7 +625,10 @@ private fun OverlayPane(
     fun update(id: Int, change: (Overlay) -> Overlay) =
         onChange(overlays.map { if (it.id == id) change(it) else it })
 
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    BoxWithConstraints(modifier) {
+    // Os controles ocupam no máximo metade da altura e rolam; a prévia fica com o resto.
+    val controlsMax = maxHeight * 0.5f
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
             val sidePx = min(constraints.maxWidth, constraints.maxHeight)
             val sideDp = with(density) { sidePx.toDp() }
@@ -631,14 +687,30 @@ private fun OverlayPane(
             }
         }
 
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { onAdd(false, "Texto") }) { Text("+ Texto") }
-                TextButton(onClick = { showEmojis = !showEmojis }) { Text(if (showEmojis) "Fechar emojis" else "+ Emoji") }
-                if (selected != null) TextButton(onClick = {
-                    onChange(overlays.filterNot { it.id == selected.id })
-                    onSelect(null)
-                }) { Text("Excluir") }
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = controlsMax)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { onAdd(false, "Texto") }) {
+                    Icon(AppIcons.TextT, contentDescription = "Adicionar texto")
+                }
+                IconToggleButton(checked = showEmojis, onCheckedChange = { showEmojis = it }) {
+                    Icon(AppIcons.Smile, contentDescription = "Adicionar emoji")
+                }
+                if (selected != null) {
+                    Box(Modifier.weight(1f))
+                    IconButton(onClick = {
+                        onChange(overlays.filterNot { it.id == selected.id })
+                        onSelect(null)
+                    }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Excluir o item escolhido")
+                    }
+                }
             }
 
             if (showEmojis) {
@@ -658,9 +730,8 @@ private fun OverlayPane(
                     OutlinedTextField(
                         value = selected.text,
                         onValueChange = { text -> update(selected.id) { it.copy(text = text.take(80)) } },
-                        label = { Text("Texto") },
                         modifier = Modifier.fillMaxWidth(),
-                        maxLines = 3,
+                        maxLines = 2,
                     )
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         TEXT_COLORS.forEach { argb ->
@@ -682,12 +753,16 @@ private fun OverlayPane(
                         }
                     }
                 }
-                Text("Tamanho", style = MaterialTheme.typography.labelMedium)
-                Slider(
-                    value = selected.size,
-                    onValueChange = { value -> update(selected.id) { it.copy(size = value) } },
-                    valueRange = 0.06f..0.6f,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(AppIcons.TextT, contentDescription = "Tamanho", modifier = Modifier.size(16.dp))
+                    Slider(
+                        value = selected.size,
+                        onValueChange = { value -> update(selected.id) { it.copy(size = value) } },
+                        valueRange = 0.06f..0.6f,
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    )
+                    Icon(AppIcons.TextT, contentDescription = null, modifier = Modifier.size(30.dp))
+                }
             } else {
                 Text(
                     "Toque em um texto ou emoji para editar. Arraste para mudar a posição.",
@@ -696,5 +771,6 @@ private fun OverlayPane(
                 )
             }
         }
+    }
     }
 }
